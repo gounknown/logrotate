@@ -190,7 +190,6 @@ func (l *Logger) rotateLocked(filename string) error {
 			if err != nil {
 				return fmt.Errorf("failed to evaluate relative path from %#v to %#v: %v", linkDir, filename, err)
 			}
-
 			linkDest = tmp
 		}
 
@@ -207,7 +206,7 @@ func (l *Logger) rotateLocked(filename string) error {
 		}
 
 		if err := os.Rename(tmpLinkName, l.opts.linkName); err != nil {
-			return fmt.Errorf("failed to rename new symlink: %v", err)
+			return fmt.Errorf("failed to rename new symlink %s -> %s: %v", tmpLinkName, l.opts.linkName, err)
 		}
 	}
 

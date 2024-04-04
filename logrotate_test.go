@@ -13,6 +13,31 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func BenchmarkLogRotate(b *testing.B) {
+	dir := filepath.Join(os.TempDir(), "logrotate-benchmark")
+	// defer os.RemoveAll(dir)
+	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
+		WithLinkName(filepath.Join(dir, "log")),
+		WithMaxSize(10),
+		WithMaxAge(24*time.Hour),
+		WithMaxBackups(10),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer l.Close()
+	logline := []byte("Hello, World")
+	for i := 0; i < b.N; i++ {
+		n, err := l.Write(logline)
+		if err != nil {
+			panic(err)
+		}
+		if n != len(logline) {
+			panic("write length not matched")
+		}
+	}
+}
+
 func TestLogRotate(t *testing.T) {
 	testCases := []struct {
 		Name        string
