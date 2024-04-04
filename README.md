@@ -4,13 +4,43 @@ A powerful log rotation package for Go.
 
 ## Examples
 
+### Use with stdlib log
+
+```go
+package main
+
+import (
+  "log"
+
+  "github.com/gounknown/logrotate"
+)
+
+func main() {
+  l, _ := logrotate.New("/path/to/access_log.%Y%m%d%H%M")
+  log.SetOutput(l)
+
+  log.Printf("Hello, World!")
+}
+```
+
 ### Use with Zap
 
 ```go
+package main
+
+import (
+    "log"
+
+    "go.uber.org/zap"
+    "go.uber.org/zap/zapcore"
+
+    "github.com/gounknown/logrotate"
+)
+
 func main() {
   // logrotate is already safe for concurrent use, so we don't need to
   // lock it.
-  r, err := logrotate.New(
+  l, err := logrotate.New(
     "/path/to/access_log.%Y%m%d%H%M",
     logrotate.WithLinkName("/path/to/access_log"),
     logrotate.WithMaxAge(24 * time.Hour),
@@ -21,26 +51,13 @@ func main() {
     return
   }
 
-  w := zapcore.AddSync(r)
+  w := zapcore.AddSync(l)
   core := zapcore.NewCore(
     zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
     w,
     zap.InfoLevel,
   )
   logger := zap.New(core)
-}
-```
-
-### Use with stdlib log
-
-```go
-func main() {
-  r, _ := logrotate.New("/path/to/access_log.%Y%m%d%H%M")
-
-  log.SetOutput(r)
-
-  /* elsewhere ... */
-  log.Printf("Hello, World!")
 }
 ```
 

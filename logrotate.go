@@ -1,5 +1,5 @@
-// package logrotate allows you to automatically rotate output files when you
-// write to them according to the filename pattern that you can specify.
+// Package logrotate can automatically rotate log files when you write to
+// them according to the filename pattern that you can specify.
 package logrotate
 
 import (
@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/lestrrat-go/strftime"
-	"github.com/pkg/errors"
 )
 
 // ensure we always implement io.WriteCloser
@@ -41,20 +40,20 @@ func New(pattern string, options ...Option) (*Logger, error) {
 
 	filenamePattern, err := strftime.New(pattern)
 	if err != nil {
-		return nil, errors.Wrap(err, `invalid strftime pattern`)
+		return nil, fmt.Errorf("invalid strftime pattern: %v", err)
 	}
 
 	opts := parseOptions(options...)
 
 	if opts.maxAge < 0 {
-		return nil, errors.New("option MaxAge cannot be < 0")
+		return nil, fmt.Errorf("option MaxAge cannot be < 0")
 	}
 	if opts.maxInterval < 0 {
-		return nil, errors.New("option MaxInterval cannot be < 0")
+		return nil, fmt.Errorf("option MaxInterval cannot be < 0")
 	}
 
 	if opts.maxSize < 0 {
-		return nil, errors.New("option MaxSize cannot be < 0")
+		return nil, fmt.Errorf("option MaxSize cannot be < 0")
 	}
 
 	return &Logger{
@@ -68,42 +67,42 @@ func New(pattern string, options ...Option) (*Logger, error) {
 // appropriate file handle that is currently being used.
 // If we have reached rotation time, the target file gets
 // automatically rotated, and also purged if necessary.
-func (r *Logger) Write(p []byte) (n int, err error) {
+func (l *Logger) Write(p []byte) (n int, err error) {
 	// Guard against concurrent writes
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
-	out, err := r.getWriterLocked(false, false)
+	out, err := l.getWriterLocked(false, false)
 	if err != nil {
-		return 0, errors.Wrap(err, `failed to acquite target io.Writer`)
+		return 0, fmt.Errorf("failed to get io.Writer: %v", err)
 	}
 
 	return out.Write(p)
 }
 
-// r.mu must be held by the caller.
-func (r *Logger) getWriterLocked(bailOnRotateFail, rotateSuffixSeq bool) (io.Writer, error) {
-	suffixSeq := r.suffixSeq
+// l.mu must be held by the caller.
+func (l *Logger) getWriterLocked(bailOnRotateFail, rotateSuffixSeq bool) (io.Writer, error) {
+	suffixSeq := l.suffixSeq
 
 	// This filename contains the name of the "NEW" filename
-	// to log to, which may be newer than r.currentFilename
-	baseFilename := genFilename(r.pattern, r.opts.clock, r.opts.maxInterval)
+	// to log to, which may be newer than l.currentFilename
+	baseFilename := genFilename(l.pattern, l.opts.clock, l.opts.maxInterval)
 	filename := baseFilename
 	var forceNewFile bool
 
-	fi, err := os.Stat(r.currFilename)
+	fi, err := os.Stat(l.currFilename)
 	sizeRotation := false
-	if err == nil && r.opts.maxSize > 0 && int64(r.opts.maxSize) <= fi.Size() {
+	if err == nil && l.opts.maxSize > 0 && int64(l.opts.maxSize) <= fi.Size() {
 		forceNewFile = true
 		sizeRotation = true
 	}
 
-	if baseFilename != r.currBaseFilename {
+	if baseFilename != l.currBaseFilename {
 		suffixSeq = 0
 	} else {
 		if !rotateSuffixSeq && !sizeRotation {
 			// nothing to do
-			return r.outFile, nil
+			return l.outFile, nil
 		}
 		forceNewFile = true
 		suffixSeq++
@@ -129,11 +128,11 @@ func (r *Logger) getWriterLocked(bailOnRotateFail, rotateSuffixSeq bool) (io.Wri
 
 	fh, err := createFile(filename)
 	if err != nil {
-		return nil, errors.Wrapf(err, `failed to create a new file %v`, filename)
+		return nil, fmt.Errorf("failed to create a new file: %v", err)
 	}
 
-	if err := r.rotateLocked(filename); err != nil {
-		err = errors.Wrap(err, "failed to rotate")
+	if err := l.rotateLocked(filename); err != nil {
+		err = fmt.Errorf("failed to rotate: %v", err)
 		if bailOnRotateFail {
 			// Failure to rotate is a problem, but it's really not a great
 			// idea to stop your application just because you couldn't rename
@@ -150,17 +149,17 @@ func (r *Logger) getWriterLocked(bailOnRotateFail, rotateSuffixSeq bool) (io.Wri
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 	}
 
-	r.outFile.Close()
-	r.outFile = fh
-	r.currBaseFilename = baseFilename
-	r.currFilename = filename
-	r.suffixSeq = suffixSeq
+	l.outFile.Close()
+	l.outFile = fh
+	l.currBaseFilename = baseFilename
+	l.currFilename = filename
+	l.suffixSeq = suffixSeq
 
 	return fh, nil
 }
 
-// r.mu must be held by the caller.
-func (r *Logger) rotateLocked(filename string) error {
+// l.mu must be held by the caller.
+func (l *Logger) rotateLocked(filename string) error {
 	lockfn := filename + `_lock`
 	fh, err := os.OpenFile(lockfn, os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
@@ -175,7 +174,7 @@ func (r *Logger) rotateLocked(filename string) error {
 	}
 	defer guard.Run()
 
-	if r.opts.linkName != "" {
+	if l.opts.linkName != "" {
 		tmpLinkName := filename + `_symlink`
 
 		// Change how the link name is generated based on where the
@@ -183,36 +182,36 @@ func (r *Logger) rotateLocked(filename string) error {
 		// the main filename's parent directory, then we create a
 		// symlink with a relative path
 		linkDest := filename
-		linkDir := filepath.Dir(r.opts.linkName)
+		linkDir := filepath.Dir(l.opts.linkName)
 
 		baseDir := filepath.Dir(filename)
-		if strings.Contains(r.opts.linkName, baseDir) {
+		if strings.Contains(l.opts.linkName, baseDir) {
 			tmp, err := filepath.Rel(linkDir, filename)
 			if err != nil {
-				return errors.Wrapf(err, `failed to evaluate relative path from %#v to %#v`, baseDir, r.opts.linkName)
+				return fmt.Errorf("failed to evaluate relative path from %#v to %#v: %v", linkDir, filename, err)
 			}
 
 			linkDest = tmp
 		}
 
 		if err := os.Symlink(linkDest, tmpLinkName); err != nil {
-			return errors.Wrap(err, `failed to create new symlink`)
+			return fmt.Errorf("failed to create new symlink: %v", err)
 		}
 
-		// the directory where r.opts.linkName should be created must exist
+		// the directory where l.opts.linkName should be created must exist
 		_, err := os.Stat(linkDir)
 		if err != nil { // Assume err != nil means the directory doesn't exist
 			if err := os.MkdirAll(linkDir, 0755); err != nil {
-				return errors.Wrapf(err, `failed to create directory %s`, linkDir)
+				return fmt.Errorf("failed to create directory %s: %v", linkDir, err)
 			}
 		}
 
-		if err := os.Rename(tmpLinkName, r.opts.linkName); err != nil {
-			return errors.Wrap(err, `failed to rename new symlink`)
+		if err := os.Rename(tmpLinkName, l.opts.linkName); err != nil {
+			return fmt.Errorf("failed to rename new symlink: %v", err)
 		}
 	}
 
-	files, err := filepath.Glob(r.globPattern)
+	files, err := filepath.Glob(l.globPattern)
 	if err != nil {
 		return err
 	}
@@ -222,9 +221,9 @@ func (r *Logger) rotateLocked(filename string) error {
 	// the linter tells me to pre allocate this...
 	toRemove := make([]string, 0, len(files))
 
-	if r.opts.maxAge > 0 {
+	if l.opts.maxAge > 0 {
 		var remaining []string
-		cutoff := r.opts.clock.Now().Add(-1 * r.opts.maxAge)
+		cutoff := l.opts.clock.Now().Add(-1 * l.opts.maxAge)
 		for _, path := range files {
 			// Ignore lock files
 			if strings.HasSuffix(path, "_lock") || strings.HasSuffix(path, "_symlink") {
@@ -245,7 +244,7 @@ func (r *Logger) rotateLocked(filename string) error {
 		files = remaining
 	}
 
-	if r.opts.maxBackups > 0 && r.opts.maxBackups < len(files) {
+	if l.opts.maxBackups > 0 && l.opts.maxBackups < len(files) {
 		preserved := make(map[string]bool)
 		for _, path := range files {
 			// Ignore lock files
@@ -260,7 +259,7 @@ func (r *Logger) rotateLocked(filename string) error {
 				continue
 			}
 			preserved[path] = true
-			if len(preserved) > r.opts.maxBackups {
+			if len(preserved) > l.opts.maxBackups {
 				// Only remove if we have more than MaxBackups
 				toRemove = append(toRemove, path)
 			}
@@ -287,16 +286,16 @@ func (r *Logger) rotateLocked(filename string) error {
 // Close satisfies the io.Closer interface. You must
 // call this method if you performed any writes to
 // the object.
-func (r *Logger) Close() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+func (l *Logger) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
-	if r.outFile == nil {
+	if l.outFile == nil {
 		return nil
 	}
 
-	r.outFile.Close()
-	r.outFile = nil
+	l.outFile.Close()
+	l.outFile = nil
 
 	return nil
 }
@@ -308,19 +307,19 @@ func (r *Logger) Close() error {
 // This method can be used in conjunction with a signal handler so to
 // emulate servers that generate new log files when they receive a
 // SIGHUP.
-func (r *Logger) Rotate() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	_, err := r.getWriterLocked(true, true)
+func (l *Logger) Rotate() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_, err := l.getWriterLocked(true, true)
 
 	return err
 }
 
 // CurrentFileName returns the current file name that
 // the Logger object is writing to.
-func (r *Logger) CurrentFileName() string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+func (l *Logger) CurrentFileName() string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
 
-	return r.currFilename
+	return l.currFilename
 }

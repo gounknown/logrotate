@@ -1,6 +1,7 @@
 package logrotate
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/strftime"
-	"github.com/pkg/errors"
 )
 
 // Clock is a source of time for logrotate.
@@ -65,12 +65,12 @@ func createFile(filename string) (*os.File, error) {
 	// ./foo/bar/baz/hello.log must make sure ./foo/bar/baz is existed
 	dirname := filepath.Dir(filename)
 	if err := os.MkdirAll(dirname, 0755); err != nil {
-		return nil, errors.Wrapf(err, "failed to create directory %s", dirname)
+		return nil, fmt.Errorf("failed to create directory for new logfile: %s", err)
 	}
 	// if we got here, then we need to create a file
 	fh, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return nil, errors.Errorf("failed to open file %s: %s", filename, err)
+		return nil, fmt.Errorf("failed to open new logfile %s: %s", filename, err)
 	}
 
 	return fh, nil

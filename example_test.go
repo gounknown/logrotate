@@ -2,6 +2,7 @@ package logrotate
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 )
@@ -15,45 +16,38 @@ func ExampleNew() {
 			WithMaxSize(4),
 		)
 		if err != nil {
-			fmt.Println("Could not open log file ", err)
-			return
+			panic(err)
 		}
 
 		n, err := writer.Write([]byte("test"))
 		if err != nil || n != 4 {
-			fmt.Println("Write failed ", err, " number written ", n)
-			return
+			log.Fatalf("write error: %s, write count: %d", err, n)
 		}
 		n, err = writer.Write([]byte("test"))
 		if err != nil || n != 4 {
-			fmt.Println("Write failed ", err, " number written ", n)
-			return
+			log.Fatalf("write error: %s, write count: %d", err, n)
 		}
 		err = writer.Close()
 		if err != nil {
-			fmt.Println("Close failed ", err)
-			return
+			panic(err)
 		}
 	}
 
 	files, err := os.ReadDir(logDir)
 	if err != nil {
-		fmt.Println("ReadDir failed ", err)
-		return
+		panic(err)
 	}
 	for _, file := range files {
 		info, err := file.Info()
 		if err != nil {
-			fmt.Println("get file info failed ", err)
-			return
+			panic(err)
 		}
 		fmt.Println(file.Name(), info.Size())
 	}
 
 	err = os.RemoveAll(logDir)
 	if err != nil {
-		fmt.Println("RemoveAll failed ", err)
-		return
+		panic(err)
 	}
 	// OUTPUT:
 	// test.log 8
