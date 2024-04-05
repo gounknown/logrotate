@@ -27,7 +27,7 @@ func main() {
 	l, _ := logrotate.New(
 		"/path/to/log.%Y%m%d%H",
 		logrotate.WithLinkName("/path/to/log"), // symlink to current logfile
-		logrotate.WithMaxAge(30*24*time.Hour),  // retain latest 30 days
+		logrotate.WithMaxAge(30*24*time.Hour),  // remove logs older than 30 days
 		logrotate.WithMaxInterval(time.Hour),   // rotate every hour
 	)
 
@@ -140,7 +140,7 @@ rotated. It defaults to 100 megabytes.
 Retain old log files based on the timestamp encoded in their filename.
 The default is not to remove old log files based on age.
 
-Note: Remember to use time.Duration values.
+Note: Remember to use `time.Duration` values.
 
 ```go
   // Remove logs older than 7 days
