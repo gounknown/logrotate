@@ -31,7 +31,8 @@ type Logger struct {
 	currSequence     uint // sequential filename suffix
 }
 
-// New creates a new Logger object with specified filename pattern.
+// New creates a new concurrent safe Logger object with the provided
+// filename pattern and options.
 func New(pattern string, options ...Option) (*Logger, error) {
 	globPattern := parseGlobPattern(pattern)
 
@@ -281,30 +282,32 @@ func (l *Logger) rotateLocked(filename string) error {
 	return nil
 }
 
-// Close satisfies the io.Closer interface. You must
-// call this method if you performed any writes to
-// the object.
+// Close implements io.Closer, and closes the current logfile.
 func (l *Logger) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	return l.close()
+}
 
+// close closes the file if it is open.
+func (l *Logger) close() error {
 	if l.currFile == nil {
 		return nil
 	}
-
-	l.currFile.Close()
+	err := l.currFile.Close()
 	l.currFile = nil
-
-	return nil
+	return err
 }
 
-// Rotate forcefully rotates the log files. If the generated file name
-// clash because file already exists, a numeric suffix of the form
-// ".1", ".2", ".3" and so forth are appended to the end of the log file.
+// Rotate forcefully rotates the log files. It will close the existing log file
+// and immediately create a new one. This is a helper function for applications
+// that want to initiate rotations outside of the normal rotation rules, such
+// as in response to SIGHUP. After rotating, this initiates removal of old log
+// files according to the configuration.
 //
-// This method can be used in conjunction with a signal handler so to
-// emulate servers that generate new log files when they receive a
-// SIGHUP.
+// If the new generated log file name clash because file already exists,
+// a sequence suffix of the form ".1", ".2", ".3" and so forth are appended to
+// the end of the log file.
 func (l *Logger) Rotate() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -313,9 +316,8 @@ func (l *Logger) Rotate() error {
 	return err
 }
 
-// CurrentFileName returns the current file name that
-// the Logger object is writing to.
-func (l *Logger) CurrentFileName() string {
+// currentFilename returns filename the Logger object is writing to.
+func (l *Logger) currentFilename() string {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 

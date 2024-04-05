@@ -6,58 +6,40 @@ A powerful log rotation package for Go.
 
 ### Use with stdlib log
 
+> See demo: [ Use with stdlib log](./examples/stdlog/main.go)
+
 ```go
-package main
-
-import (
-  "log"
-
-  "github.com/gounknown/logrotate"
-)
-
 func main() {
-  l, _ := logrotate.New("/path/to/access_log.%Y%m%d%H%M")
-  log.SetOutput(l)
+    // logrotate is safe for concurrent use, so we don't need to lock it.
+	l, _ := logrotate.New("logs/app.%Y%m%d.log")
+	log.SetOutput(l)
 
-  log.Printf("Hello, World!")
+	log.Printf("Hello, World!")
 }
 ```
 
 ### Use with Zap
 
+> See demo: [Use with Zap](./examples/zap/main.go)
+
 ```go
-package main
-
-import (
-    "log"
-
-    "go.uber.org/zap"
-    "go.uber.org/zap/zapcore"
-
-    "github.com/gounknown/logrotate"
-)
-
 func main() {
-  // logrotate is already safe for concurrent use, so we don't need to
-  // lock it.
-  l, err := logrotate.New(
-    "/path/to/access_log.%Y%m%d%H%M",
-    logrotate.WithLinkName("/path/to/access_log"),
-    logrotate.WithMaxAge(24 * time.Hour),
-    logrotate.WithMaxInterval(time.Hour),
-  )
-  if err != nil {
-    log.Printf("failed to create logrotate: %s", err)
-    return
-  }
+	// logrotate is safe for concurrent use, so we don't need to lock it.
+	l, _ := logrotate.New(
+		"/path/to/app.%Y%m%d%H.log",
+		logrotate.WithLinkName("/path/to/app"),
+		logrotate.WithMaxAge(24*time.Hour),
+		logrotate.WithMaxInterval(time.Hour),
+	)
 
-  w := zapcore.AddSync(l)
-  core := zapcore.NewCore(
-    zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
-    w,
-    zap.InfoLevel,
-  )
-  logger := zap.New(core)
+	w := zapcore.AddSync(l)
+	core := zapcore.NewCore(
+		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+		w,
+		zap.InfoLevel,
+	)
+	logger := zap.New(core)
+	logger.Info("Hello, World!")
 }
 ```
 

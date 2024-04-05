@@ -15,7 +15,7 @@ import (
 
 func BenchmarkLogRotate(b *testing.B) {
 	dir := filepath.Join(os.TempDir(), "logrotate-benchmark")
-	// defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
 		WithLinkName(filepath.Join(dir, "log")),
 		WithMaxSize(10),
@@ -61,7 +61,7 @@ func TestLogRotate(t *testing.T) {
 					return false
 				}
 
-				expectedLinkDest := filepath.Base(l.CurrentFileName())
+				expectedLinkDest := filepath.Base(l.currentFilename())
 				t.Logf("expecting relative link: %s", expectedLinkDest)
 
 				return assert.Equal(t, linkDest, expectedLinkDest, `Symlink destination should  match expected filename (%#v != %#v)`, expectedLinkDest, linkDest)
@@ -81,7 +81,7 @@ func TestLogRotate(t *testing.T) {
 					return false
 				}
 
-				expectedLinkDest := filepath.Join("..", "..", filepath.Base(l.CurrentFileName()))
+				expectedLinkDest := filepath.Join("..", "..", filepath.Base(l.currentFilename()))
 				t.Logf("expecting relative link: %s", expectedLinkDest)
 
 				return assert.Equal(t, linkDest, expectedLinkDest, `Symlink destination should  match expected filename (%#v != %#v)`, expectedLinkDest, linkDest)
@@ -122,7 +122,7 @@ func TestLogRotate(t *testing.T) {
 				return
 			}
 
-			fn := l.CurrentFileName()
+			fn := l.currentFilename()
 			if fn == "" {
 				t.Errorf("Could not get filename %s", fn)
 			}
@@ -154,7 +154,7 @@ func TestLogRotate(t *testing.T) {
 
 			// This next Write() should trigger Rotate()
 			l.Write([]byte(str))
-			newfn := l.CurrentFileName()
+			newfn := l.currentFilename()
 			if newfn == fn {
 				t.Errorf(`New file name and old file name should not match ("%s" != "%s")`, fn, newfn)
 			}
@@ -288,7 +288,7 @@ func TestLogSetOutput(t *testing.T) {
 	str := "Hello, World"
 	log.Print(str)
 
-	fn := l.CurrentFileName()
+	fn := l.currentFilename()
 	if fn == "" {
 		t.Errorf("Could not get filename %s", fn)
 	}
@@ -325,7 +325,7 @@ func TestRotationSuffixSeqNames(t *testing.T) {
 			// Because every call to Rotate should yield a new log file,
 			// and the previous files already exist, the filenames should share
 			// the same prefix and have a unique suffix
-			fn := filepath.Base(l.CurrentFileName())
+			fn := filepath.Base(l.currentFilename())
 			if !assert.True(t, strings.HasPrefix(fn, "unchanged-pattern.log"), "prefix for all filenames should match") {
 				return
 			}
@@ -335,14 +335,14 @@ func TestRotationSuffixSeqNames(t *testing.T) {
 			if !assert.True(t, suffix == expectedSuffix, "expected suffix %s found %s", expectedSuffix, suffix) {
 				return
 			}
-			assert.FileExists(t, l.CurrentFileName(), "file does not exist %s", l.CurrentFileName())
-			stat, err := os.Stat(l.CurrentFileName())
+			assert.FileExists(t, l.currentFilename(), "file does not exist %s", l.currentFilename())
+			stat, err := os.Stat(l.currentFilename())
 			if err == nil {
-				if !assert.True(t, stat.Size() == 13, "file %s size is %d, expected 13", l.CurrentFileName(), stat.Size()) {
+				if !assert.True(t, stat.Size() == 13, "file %s size is %d, expected 13", l.currentFilename(), stat.Size()) {
 					return
 				}
 			} else {
-				assert.Failf(t, "could not stat file %s", l.CurrentFileName())
+				assert.Failf(t, "could not stat file %s", l.currentFilename())
 
 				return
 			}
@@ -371,7 +371,7 @@ func TestRotationSuffixSeqNames(t *testing.T) {
 			time.Sleep(time.Second)
 			// because every new Write should yield a new logfile,
 			// every rorate should be create a filename ending with a .1
-			if !assert.True(t, strings.HasSuffix(l.CurrentFileName(), ".1"), "log name should end with .1") {
+			if !assert.True(t, strings.HasSuffix(l.currentFilename(), ".1"), "log name should end with .1") {
 				return
 			}
 		}
@@ -423,7 +423,7 @@ func TestTimeZone(t *testing.T) {
 
 				t.Logf("expected %s", test.Expected)
 				l.Rotate()
-				if !assert.Equal(t, test.Expected, l.CurrentFileName(), "file names should match") {
+				if !assert.Equal(t, test.Expected, l.currentFilename(), "file names should match") {
 					return
 				}
 			})

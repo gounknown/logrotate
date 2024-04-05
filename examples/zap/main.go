@@ -10,8 +10,7 @@ import (
 )
 
 func main() {
-	// logrotate is already safe for concurrent use, so we don't need to
-	// lock it.
+	// logrotate is safe for concurrent use, so we don't need to lock it.
 	l, err := logrotate.New(
 		"logs/app.%Y%m%d%H.log",
 		logrotate.WithLinkName("logs/app"),

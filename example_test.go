@@ -4,53 +4,27 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 )
 
 func ExampleNew() {
-	logDir := filepath.Join(os.TempDir(), "logrotate-example")
-	logPath := filepath.Join(logDir, "test.log")
+	l, _ := New(
+		"logs/test.log",
+		WithMaxSize(10), // 10 bytes
+	)
+	log.SetOutput(l)
 
-	for i := 0; i < 2; i++ {
-		writer, err := New(logPath,
-			WithMaxSize(4),
-		)
-		if err != nil {
-			panic(err)
-		}
+	log.Printf("Hello, World!")
+	log.Printf("Hello, World!")
+	log.Printf("Hello, World!")
 
-		n, err := writer.Write([]byte("test"))
-		if err != nil || n != 4 {
-			log.Fatalf("write error: %s, write count: %d", err, n)
-		}
-		n, err = writer.Write([]byte("test"))
-		if err != nil || n != 4 {
-			log.Fatalf("write error: %s, write count: %d", err, n)
-		}
-		err = writer.Close()
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	files, err := os.ReadDir(logDir)
-	if err != nil {
-		panic(err)
-	}
+	files, _ := os.ReadDir("logs")
 	for _, file := range files {
-		info, err := file.Info()
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println(file.Name(), info.Size())
+		fmt.Println(file.Name())
 	}
+	os.RemoveAll("logs")
 
-	err = os.RemoveAll(logDir)
-	if err != nil {
-		panic(err)
-	}
 	// OUTPUT:
-	// test.log 8
-	// test.log.1 4
-	// test.log.2 4
+	// test.log
+	// test.log.1
+	// test.log.2
 }
