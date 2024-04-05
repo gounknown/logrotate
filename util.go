@@ -139,3 +139,23 @@ func (g *cleanupGuard) Enable() {
 func (g *cleanupGuard) Run() {
 	g.fn()
 }
+
+type logfile struct {
+	path string
+	os.FileInfo
+}
+
+// byModTime sorts by file modification time.
+type byModTime []*logfile
+
+func (b byModTime) Less(i, j int) bool {
+	return b[i].ModTime().After(b[j].ModTime())
+}
+
+func (b byModTime) Swap(i, j int) {
+	b[i], b[j] = b[j], b[i]
+}
+
+func (b byModTime) Len() int {
+	return len(b)
+}

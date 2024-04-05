@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -29,6 +30,10 @@ type Logger struct {
 	currFilename     string
 	currBaseFilename string
 	currSequence     uint // sequential filename suffix
+
+	// control background mill goroutine
+	millCh    chan bool
+	startMill sync.Once
 }
 
 // New creates a new concurrent safe Logger object with the provided
@@ -76,6 +81,148 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	}
 
 	return out.Write(p)
+}
+
+// millRun runs in a goroutine to manage post-rotation compression and removal
+// of old log files.
+func (l *Logger) millRun() {
+	for range l.millCh {
+		// what am I going to do, log this?
+		_ = l.millRunOnce()
+	}
+}
+
+// mill performs post-rotation compression and removal of stale log files,
+// starting the mill goroutine if necessary.
+func (l *Logger) mill() {
+	l.startMill.Do(func() {
+		l.millCh = make(chan bool, 1)
+		go l.millRun()
+	})
+	select {
+	case l.millCh <- true:
+	default:
+	}
+}
+
+// millRunOnce performs removal of stale log files. Old log
+// files are removed, keeping at most MaxBackups files, as long as
+// none of them are older than MaxAge.
+func (l *Logger) millRunOnce() error {
+	if l.opts.maxBackups == 0 && l.opts.maxAge == 0 {
+		return nil
+	}
+
+	files, err := l.getLogFiles()
+	if err != nil {
+		return err
+	}
+
+	if len(files) == 0 {
+		return nil
+	}
+
+	if l.opts.linkName != "" {
+		// NOTE: file already sorted by ModeTime
+		latestFilename := files[0].path
+		tmpLinkName := genSymlinkFilename(latestFilename)
+
+		// Change how the link name is generated based on where the
+		// target location is. if the location is directly underneath
+		// the main filename's parent directory, then we create a
+		// symlink with a relative path
+		linkDest := latestFilename
+		linkDir := filepath.Dir(l.opts.linkName)
+
+		baseDir := filepath.Dir(latestFilename)
+		if strings.Contains(l.opts.linkName, baseDir) {
+			tmp, err := filepath.Rel(linkDir, latestFilename)
+			if err != nil {
+				return fmt.Errorf("failed to evaluate relative path from %#v to %#v: %v", linkDir, latestFilename, err)
+			}
+			linkDest = tmp
+		}
+
+		if err := os.Symlink(linkDest, tmpLinkName); err != nil {
+			return fmt.Errorf("failed to create new symlink: %v", err)
+		}
+
+		// the directory where LinkName should be created must exist
+		_, err := os.Stat(linkDir)
+		if err != nil { // Assume err != nil means the directory doesn't exist
+			if err := os.MkdirAll(linkDir, 0755); err != nil {
+				return fmt.Errorf("failed to create directory %s: %v", linkDir, err)
+			}
+		}
+
+		if err := os.Rename(tmpLinkName, l.opts.linkName); err != nil {
+			return fmt.Errorf("failed to rename new symlink %s -> %s: %v", tmpLinkName, l.opts.linkName, err)
+		}
+	}
+
+	// fmt.Printf("files[%d]: %v\n", len(files), files)
+
+	// the linter tells me to pre allocate this...
+	// TODO: compresess
+	var removals []*logfile
+
+	if l.opts.maxAge > 0 {
+		var remaining []*logfile
+		cutoff := l.opts.clock.Now().Add(-1 * l.opts.maxAge)
+		for _, f := range files {
+			if f.ModTime().Before(cutoff) {
+				removals = append(removals, f)
+			} else {
+				remaining = append(remaining, f)
+			}
+		}
+		files = remaining
+	}
+
+	if l.opts.maxBackups > 0 && l.opts.maxBackups < len(files) {
+		preserved := make(map[string]bool)
+		for _, f := range files {
+			preserved[f.path] = true
+			if len(preserved) > l.opts.maxBackups {
+				// Only remove if we have more than MaxBackups
+				removals = append(removals, f)
+			}
+		}
+	}
+
+	// fmt.Printf("removals[%d]: %v\n", len(removals), removals)
+
+	for _, f := range removals {
+		os.Remove(f.path)
+	}
+
+	return nil
+}
+
+// getLogFiles returns all log files matched the glob pattern, sorted by ModTime.
+func (l *Logger) getLogFiles() ([]*logfile, error) {
+	paths, err := filepath.Glob(l.globPattern)
+	if err != nil {
+		return nil, err
+	}
+
+	logFiles := []*logfile{}
+	for _, path := range paths {
+		fi, err := os.Lstat(path)
+		if err != nil {
+			// ignore error
+			continue
+		}
+		if fi.Mode()&os.ModeSymlink == os.ModeSymlink {
+			// ignore symlink files
+			continue
+		}
+		logFiles = append(logFiles, &logfile{path, fi})
+	}
+
+	sort.Sort(byModTime(logFiles))
+
+	return logFiles, nil
 }
 
 // l.mu must be held by the caller.
