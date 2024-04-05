@@ -47,16 +47,22 @@ func main() {
 
 ### Pattern (Required)
 
-The pattern used to generate actual log file names. You should use patterns
-using the strftime (3) format. For example:
+> See [strftime: supported conversion specifications](https://github.com/lestrrat-go/strftime?tab=readme-ov-file#supported-conversion-specifications)
+
+The pattern used to generate actual log file names. You should use the
+[strftime (3) - format date and time](https://man7.org/linux/man-pages/man3/strftime.3.html) format.
+For example:
 
 ```go
-  logrotate.New("/var/log/myapp/log.%Y%m%d")
+// YYYY-mm-dd (e.g.: 2024-04-04)
+logrotate.New("/var/log/myapp/log.%Y-%m-%d")
+// YY-mm-dd HH:MM:SS (e.g.: 2024-04-04 10:01:49)
+logrotate.New("/var/log/myapp/log.%Y-%m-%d %H:%M:%S")
 ```
 
 ### Clock (default: logrotate.DefaultClock)
 
-You may specify an object that implements the roatatelogs.Clock interface.
+You may specify an object that implements the `logrotate.Clock` interface.
 When this option is supplied, it's used to determine the current time to
 base all of the calculations on. For example, if you want to base your
 calculations in UTC, you may create a UTC clock:
@@ -69,26 +75,27 @@ func (UTCClock) Now() time.Time {
 }
 
 logrotate.New(
-  "/var/log/myapp/log.%Y%m%d",
-  logrotate.WithClock(UTCClock),
+    "/var/log/myapp/log.%Y%m%d",
+    logrotate.WithClock(UTCClock),
 )
 ```
 
 ### LinkName (default: "")
 
 Path where a symlink for the actual log file is placed. This allows you to
-always check at the same location for log files even if the logs were rotated
+always check at the same location for current log file even if the logs were
+rotated.
 
 ```go
-  logrotate.New(
+logrotate.New(
     "/var/log/myapp/log.%Y%m%d",
     logrotate.WithLinkName("/var/log/myapp/current"),
-  )
+)
 ```
 
-```
-  // Else where
-  $ tail -f /var/log/myapp/current
+```bash
+# Check current log file
+$ tail -f /var/log/myapp/current
 ```
 
 Links that share the same parent directory with the main log path will get a
@@ -116,13 +123,13 @@ Note: Remember to use time.Duration values.
   )
 ```
 
-### MaxSize(default: 100 megabytes)
+### MaxSize (default: 100 megabytes)
 
 MaxSize is the maximum size in megabytes of the log file before it gets
 rotated. It defaults to 100 megabytes.
 
 ```go
-  // Rotate every 10M
+  // Rotate every 10 MB
   logrotate.New(
     "/var/log/myapp/log.%Y%m%d",
     logrotate.WithMaxSize(10*1024*1024),
