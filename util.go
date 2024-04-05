@@ -7,11 +7,29 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/lestrrat-go/strftime"
 )
+
+const (
+	lockFileSuffix    = ".lock#"
+	symlinkFileSuffix = ".symlink#"
+)
+
+func genLockFilename(filenane string) string {
+	return filenane + lockFileSuffix
+}
+
+func genSymlinkFilename(filenane string) string {
+	return filenane + symlinkFileSuffix
+}
+
+func isLockOrSymlinkFile(path string) bool {
+	return strings.HasSuffix(path, lockFileSuffix) || strings.HasSuffix(path, symlinkFileSuffix)
+}
 
 // Clock is a source of time for logrotate.
 type Clock interface {

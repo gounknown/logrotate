@@ -161,7 +161,7 @@ func (l *Logger) getWriterLocked(bailOnRotateFail, rotateSuffixSeq bool) (io.Wri
 
 // l.mu must be held by the caller.
 func (l *Logger) rotateLocked(filename string) error {
-	lockfn := filename + `_lock`
+	lockfn := genLockFilename(filename)
 	file, err := os.OpenFile(lockfn, os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		// Can't lock, just return
@@ -176,7 +176,7 @@ func (l *Logger) rotateLocked(filename string) error {
 	defer guard.Run()
 
 	if l.opts.linkName != "" {
-		tmpLinkName := filename + `_symlink`
+		tmpLinkName := genSymlinkFilename(filename)
 
 		// Change how the link name is generated based on where the
 		// target location is. if the location is directly underneath
@@ -225,8 +225,7 @@ func (l *Logger) rotateLocked(filename string) error {
 		var remaining []string
 		cutoff := l.opts.clock.Now().Add(-1 * l.opts.maxAge)
 		for _, path := range files {
-			// Ignore lock files
-			if strings.HasSuffix(path, "_lock") || strings.HasSuffix(path, "_symlink") {
+			if isLockOrSymlinkFile(path) {
 				continue
 			}
 			fi, err := os.Stat(path)
@@ -247,8 +246,7 @@ func (l *Logger) rotateLocked(filename string) error {
 	if l.opts.maxBackups > 0 && l.opts.maxBackups < len(files) {
 		preserved := make(map[string]bool)
 		for _, path := range files {
-			// Ignore lock files
-			if strings.HasSuffix(path, "_lock") || strings.HasSuffix(path, "_symlink") {
+			if isLockOrSymlinkFile(path) {
 				continue
 			}
 			fl, err := os.Lstat(path)
