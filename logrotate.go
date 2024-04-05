@@ -33,10 +33,7 @@ type Logger struct {
 
 // New creates a new Logger object with specified filename pattern.
 func New(pattern string, options ...Option) (*Logger, error) {
-	globPattern := pattern
-	for _, re := range patternConversionRegexps {
-		globPattern = re.ReplaceAllString(globPattern, "*")
-	}
+	globPattern := parseGlobPattern(pattern)
 
 	filenamePattern, err := strftime.New(pattern)
 	if err != nil {

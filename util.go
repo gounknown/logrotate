@@ -81,6 +81,14 @@ var patternConversionRegexps = []*regexp.Regexp{
 	regexp.MustCompile(`\*+`),
 }
 
+func parseGlobPattern(pattern string) string {
+	globPattern := pattern
+	for _, re := range patternConversionRegexps {
+		globPattern = re.ReplaceAllString(globPattern, "*")
+	}
+	return globPattern
+}
+
 type cleanupGuard struct {
 	enable bool
 	fn     func()

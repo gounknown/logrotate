@@ -9,7 +9,7 @@ import (
 
 func ExampleNew() {
 	logDir := filepath.Join(os.TempDir(), "logrotate-example")
-	logPath := fmt.Sprintf("%s/test.log", logDir)
+	logPath := filepath.Join(logDir, "test.log")
 
 	for i := 0; i < 2; i++ {
 		writer, err := New(logPath,

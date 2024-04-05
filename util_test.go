@@ -64,3 +64,71 @@ func Test_genFilename(t *testing.T) {
 		})
 	}
 }
+
+func Test_parseGlobPattern(t *testing.T) {
+	type args struct {
+		pattern string
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "test-strftime",
+			args: args{
+				pattern: "test_%Y%m%d%H%M%S",
+			},
+			want: "test_*",
+		},
+		{
+			name: "format-strftime",
+			args: args{
+				pattern: "test_%Y-%m-%d %H:%M:%S",
+			},
+			want: "test_*-*-* *:*:*",
+		},
+		{
+			name: "all-strftime",
+			args: args{
+				pattern: "%Y%m%d%H%M%S",
+			},
+			want: "*",
+		},
+		{
+			name: "with-one-*",
+			args: args{
+				pattern: "test_*%Y%m%d%H%M%S",
+			},
+			want: "test_*",
+		},
+		{
+			name: "escape-ok-%%",
+			args: args{
+				pattern: "test_%%%Y%m%d%H%M%S",
+			},
+			want: "test_*",
+		},
+		{
+			name: "escape-miss-%",
+			args: args{
+				pattern: "test_%%Y%m%d%H%M%S",
+			},
+			want: "test_*Y*",
+		},
+		{
+			name: "with-file-ext",
+			args: args{
+				pattern: "test_%Y%m%d%H%M%S.log",
+			},
+			want: "test_*.log",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseGlobPattern(tt.args.pattern); got != tt.want {
+				t.Errorf("parseGlobPattern() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
