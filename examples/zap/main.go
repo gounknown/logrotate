@@ -12,10 +12,10 @@ import (
 func main() {
 	// logrotate is safe for concurrent use, so we don't need to lock it.
 	l, err := logrotate.New(
-		"logs/app.%Y%m%d%H.log",
-		logrotate.WithLinkName("logs/app"),
+		"_logs/app.%Y%m%d%H.log",
+		logrotate.WithLinkName("_logs/app"),
 		logrotate.WithMaxAge(24*time.Hour),
-		logrotate.WithMaxSize(10),
+		logrotate.WithMaxSize(10), // 10 bytes
 		logrotate.WithMaxInterval(time.Hour),
 	)
 	if err != nil {
@@ -29,6 +29,6 @@ func main() {
 		zap.InfoLevel,
 	)
 	logger := zap.New(core)
-	logger.Info("Hello, World1!")
-	logger.Info("Hello, World2!")
+	logger.Info("Hello, World!") // over 10 bytes
+	logger.Info("Hello, World!") // over 10 bytes
 }

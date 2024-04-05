@@ -10,8 +10,8 @@ A powerful log rotation package for Go.
 
 ```go
 func main() {
-    // logrotate is safe for concurrent use, so we don't need to lock it.
-	l, _ := logrotate.New("logs/app.%Y%m%d.log")
+    // logrotate is safe for concurrent use.
+	l, _ := logrotate.New("/path/to/log.%Y%m%d")
 	log.SetOutput(l)
 
 	log.Printf("Hello, World!")
@@ -24,12 +24,11 @@ func main() {
 
 ```go
 func main() {
-	// logrotate is safe for concurrent use, so we don't need to lock it.
 	l, _ := logrotate.New(
-		"/path/to/app.%Y%m%d%H.log",
-		logrotate.WithLinkName("/path/to/app"),
-		logrotate.WithMaxAge(24*time.Hour),
-		logrotate.WithMaxInterval(time.Hour),
+		"/path/to/log.%Y%m%d%H",
+		logrotate.WithLinkName("/path/to/log"), // symlink to current logfile
+		logrotate.WithMaxAge(30*24*time.Hour),  // retain latest 30 days
+		logrotate.WithMaxInterval(time.Hour),   // rotate every hour
 	)
 
 	w := zapcore.AddSync(l)
@@ -55,9 +54,9 @@ For example:
 
 ```go
 // YYYY-mm-dd (e.g.: 2024-04-04)
-logrotate.New("/var/log/myapp/log.%Y-%m-%d")
+logrotate.New("/path/to/log.%Y-%m-%d")
 // YY-mm-dd HH:MM:SS (e.g.: 2024-04-04 10:01:49)
-logrotate.New("/var/log/myapp/log.%Y-%m-%d %H:%M:%S")
+logrotate.New("/path/to/log.%Y-%m-%d %H:%M:%S")
 ```
 
 ### Clock (default: logrotate.DefaultClock)
@@ -75,7 +74,7 @@ func (UTCClock) Now() time.Time {
 }
 
 logrotate.New(
-    "/var/log/myapp/log.%Y%m%d",
+    "/path/to/log.%Y%m%d",
     logrotate.WithClock(UTCClock),
 )
 ```
@@ -88,14 +87,14 @@ rotated.
 
 ```go
 logrotate.New(
-    "/var/log/myapp/log.%Y%m%d",
-    logrotate.WithLinkName("/var/log/myapp/current"),
+    "/path/to/log.%Y%m%d",
+    logrotate.WithLinkName("/path/to/current"),
 )
 ```
 
 ```bash
 # Check current log file
-$ tail -f /var/log/myapp/current
+$ tail -f /path/to/current
 ```
 
 Links that share the same parent directory with the main log path will get a
@@ -118,7 +117,7 @@ Note: Remember to use time.Duration values.
 ```go
   // Rotate every hour
   logrotate.New(
-    "/var/log/myapp/log.%Y%m%d",
+    "/path/to/log.%Y%m%d",
     logrotate.WithMaxInterval(time.Hour),
   )
 ```
@@ -131,7 +130,7 @@ rotated. It defaults to 100 megabytes.
 ```go
   // Rotate every 10 MB
   logrotate.New(
-    "/var/log/myapp/log.%Y%m%d",
+    "/path/to/log.%Y%m%d",
     logrotate.WithMaxSize(10*1024*1024),
   )
 ```
@@ -146,7 +145,7 @@ Note: Remember to use time.Duration values.
 ```go
   // Remove logs older than 7 days
   logrotate.New(
-    "/var/log/myapp/log.%Y%m%d",
+    "/path/to/log.%Y%m%d",
     logrotate.WithMaxAge(7*24*time.Hour),
   )
 ```
@@ -160,7 +159,7 @@ deleted.)
 ```go
   // Remove logs except latest 7 files
   logrotate.New(
-    "/var/log/myapp/log.%Y%m%d",
+    "/path/to/log.%Y%m%d",
     logrotate.WithMaxBackups(7),
   )
 ```

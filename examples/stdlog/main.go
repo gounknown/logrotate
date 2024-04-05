@@ -9,7 +9,7 @@ import (
 
 func main() {
 	l, err := logrotate.New(
-		"logs/app.%Y%m%d%H%M%S.log",
+		"_logs/app.%Y%m%d%H%M%S.log",
 		logrotate.WithMaxInterval(time.Second),
 	)
 	if err != nil {
