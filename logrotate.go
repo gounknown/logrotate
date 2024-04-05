@@ -25,10 +25,10 @@ type Logger struct {
 	globPattern string
 
 	mu               sync.RWMutex // guards following
-	outFile          *os.File
+	currFile         *os.File
 	currFilename     string
 	currBaseFilename string
-	suffixSeq        uint // a numeric filename suffix sequence
+	currSequence     uint // sequential filename suffix
 }
 
 // New creates a new Logger object with specified filename pattern.
@@ -79,53 +79,57 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 
 // l.mu must be held by the caller.
 func (l *Logger) getWriterLocked(bailOnRotateFail, rotateSuffixSeq bool) (io.Writer, error) {
-	suffixSeq := l.suffixSeq
-
 	// This filename contains the name of the "NEW" filename
 	// to log to, which may be newer than l.currentFilename
 	baseFilename := genFilename(l.pattern, l.opts.clock, l.opts.maxInterval)
 	filename := baseFilename
-	var forceNewFile bool
 
+	var forceNewFile, sizeRotation bool
 	fi, err := os.Stat(l.currFilename)
-	sizeRotation := false
-	if err == nil && l.opts.maxSize > 0 && int64(l.opts.maxSize) <= fi.Size() {
-		forceNewFile = true
-		sizeRotation = true
+	if err != nil {
+		// TODO: maybe removed by third-party, so need recover automatically
+		// tracef(os.Stderr, "%s", err)
+	} else {
+		if l.opts.maxSize > 0 && int64(l.opts.maxSize) <= fi.Size() {
+			forceNewFile = true
+			sizeRotation = true
+		}
 	}
 
+	currSequence := l.currSequence
 	if baseFilename != l.currBaseFilename {
-		suffixSeq = 0
+		currSequence = 0
 	} else {
 		if !rotateSuffixSeq && !sizeRotation {
 			// nothing to do
-			return l.outFile, nil
+			return l.currFile, nil
 		}
 		forceNewFile = true
-		suffixSeq++
+		currSequence++
 	}
+
 	if forceNewFile {
 		// A new file has been requested. Instead of just using the
-		// regular strftime pattern, we create a new file name using
-		// generational names such as "foo.1", "foo.2", "foo.3", etc
+		// regular strftime pattern, we create a new file name with
+		// sequence suffix such as "foo.1", "foo.2", "foo.3", etc
 		var name string
 		for {
-			if suffixSeq == 0 {
+			if currSequence == 0 {
 				name = filename
 			} else {
-				name = fmt.Sprintf("%s.%d", filename, suffixSeq)
+				name = fmt.Sprintf("%s.%d", filename, currSequence)
 			}
 			if _, err := os.Stat(name); err != nil {
 				filename = name
 				break
 			}
-			suffixSeq++
+			currSequence++
 		}
 	}
 
-	fh, err := createFile(filename)
+	file, err := createFile(filename)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create a new file: %v", err)
+		return nil, err
 	}
 
 	if err := l.rotateLocked(filename); err != nil {
@@ -137,28 +141,28 @@ func (l *Logger) getWriterLocked(bailOnRotateFail, rotateSuffixSeq bool) (io.Wri
 			//
 			// We only return this error when explicitly needed (as specified by bailOnRotateFail)
 			//
-			// However, we *NEED* to close `fh` here
-			if fh != nil { // probably can't happen, but being paranoid
-				fh.Close()
+			// However, we *NEED* to close `file` here
+			if file != nil { // probably can't happen, but being paranoid
+				file.Close()
 			}
 			return nil, err
 		}
-		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
+		tracef(os.Stderr, "%s", err)
 	}
 
-	l.outFile.Close()
-	l.outFile = fh
+	l.currFile.Close()
+	l.currFile = file
 	l.currBaseFilename = baseFilename
 	l.currFilename = filename
-	l.suffixSeq = suffixSeq
+	l.currSequence = currSequence
 
-	return fh, nil
+	return file, nil
 }
 
 // l.mu must be held by the caller.
 func (l *Logger) rotateLocked(filename string) error {
 	lockfn := filename + `_lock`
-	fh, err := os.OpenFile(lockfn, os.O_CREATE|os.O_EXCL, 0644)
+	file, err := os.OpenFile(lockfn, os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		// Can't lock, just return
 		return err
@@ -166,7 +170,7 @@ func (l *Logger) rotateLocked(filename string) error {
 
 	var guard cleanupGuard
 	guard.fn = func() {
-		fh.Close()
+		file.Close()
 		os.Remove(lockfn)
 	}
 	defer guard.Run()
@@ -286,12 +290,12 @@ func (l *Logger) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	if l.outFile == nil {
+	if l.currFile == nil {
 		return nil
 	}
 
-	l.outFile.Close()
-	l.outFile = nil
+	l.currFile.Close()
+	l.currFile = nil
 
 	return nil
 }

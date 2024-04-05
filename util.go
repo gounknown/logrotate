@@ -2,9 +2,11 @@ package logrotate
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sync"
 	"time"
 
@@ -28,14 +30,12 @@ func (systemClock) Now() time.Time {
 	return time.Now()
 }
 
-// genFilename creates a file name based on the pattern, the current time, and the
-// rotation time.
+// genFilename creates a file name based on pattern, clock, and maxInterval.
 //
-// The bsase time that is used to generate the filename is truncated based
-// on the rotation time.
-func genFilename(pattern *strftime.Strftime, clock Clock, rotationTime time.Duration) string {
+// The base time used to generate the filename is truncated based
+// on the max interval.
+func genFilename(pattern *strftime.Strftime, clock Clock, maxInterval time.Duration) string {
 	now := clock.Now()
-
 	// XXX HACK: Truncate only happens in UTC semantics, apparently.
 	// observed values for truncating given time with 86400 secs:
 	//
@@ -49,10 +49,10 @@ func genFilename(pattern *strftime.Strftime, clock Clock, rotationTime time.Dura
 	var base time.Time
 	if now.Location() != time.UTC {
 		base = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), time.UTC)
-		base = base.Truncate(rotationTime)
+		base = base.Truncate(maxInterval)
 		base = time.Date(base.Year(), base.Month(), base.Day(), base.Hour(), base.Minute(), base.Second(), base.Nanosecond(), base.Location())
 	} else {
-		base = now.Truncate(rotationTime)
+		base = now.Truncate(maxInterval)
 	}
 
 	return pattern.FormatString(base)
@@ -61,7 +61,7 @@ func genFilename(pattern *strftime.Strftime, clock Clock, rotationTime time.Dura
 // createFile creates a new file in the given path, creating parent directories
 // as necessary
 func createFile(filename string) (*os.File, error) {
-	// make sure the dir is existed, eg:
+	// make sure the parent dir is existed, e.g.:
 	// ./foo/bar/baz/hello.log must make sure ./foo/bar/baz is existed
 	dirname := filepath.Dir(filename)
 	if err := os.MkdirAll(dirname, 0755); err != nil {
@@ -77,8 +77,8 @@ func createFile(filename string) (*os.File, error) {
 }
 
 var patternConversionRegexps = []*regexp.Regexp{
-	regexp.MustCompile(`%[%+A-Za-z]`),
-	regexp.MustCompile(`\*+`),
+	regexp.MustCompile(`%[%+A-Za-z]`), // strftime format pattern
+	regexp.MustCompile(`\*+`),         // one or multiple *
 }
 
 func parseGlobPattern(pattern string) string {
@@ -87,6 +87,23 @@ func parseGlobPattern(pattern string) string {
 		globPattern = re.ReplaceAllString(globPattern, "*")
 	}
 	return globPattern
+}
+
+// tracef formats according to a format specifier and writes to w
+// with trace info and a newline appended.
+func tracef(w io.Writer, format string, args ...any) (int, error) {
+	pc := make([]uintptr, 15)
+	n := runtime.Callers(2, pc)
+	frames := runtime.CallersFrames(pc[:n])
+	frame, _ := frames.Next()
+
+	traceArgs := []any{
+		filepath.Base(frame.File),
+		frame.Line,
+		filepath.Base(frame.Function),
+	}
+	args = append(traceArgs, args...)
+	return fmt.Fprintf(w, "%s:%d %s "+format+"\n", args...)
 }
 
 type cleanupGuard struct {
