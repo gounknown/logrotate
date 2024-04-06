@@ -7,29 +7,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/lestrrat-go/strftime"
 )
-
-const (
-	lockFileSuffix    = ".lock#"
-	symlinkFileSuffix = ".symlink#"
-)
-
-func genLockFilename(filenane string) string {
-	return filenane + lockFileSuffix
-}
-
-func genSymlinkFilename(filenane string) string {
-	return filenane + symlinkFileSuffix
-}
-
-func isLockOrSymlinkFile(path string) bool {
-	return strings.HasSuffix(path, lockFileSuffix) || strings.HasSuffix(path, symlinkFileSuffix)
-}
 
 // Clock is a source of time for logrotate.
 type Clock interface {
@@ -48,11 +30,10 @@ func (systemClock) Now() time.Time {
 	return time.Now()
 }
 
-// genFilename creates a file name based on pattern, clock, and maxInterval.
+// genBaseFilename creates a file name based on pattern, clock, and interval.
 //
-// The base time used to generate the filename is truncated based
-// on the max interval.
-func genFilename(pattern *strftime.Strftime, clock Clock, maxInterval time.Duration) string {
+// The base time used to generate the filename is truncated based on nterval.
+func genBaseFilename(pattern *strftime.Strftime, clock Clock, interval time.Duration) string {
 	now := clock.Now()
 	// XXX HACK: Truncate only happens in UTC semantics, apparently.
 	// observed values for truncating given time with 86400 secs:
@@ -67,10 +48,10 @@ func genFilename(pattern *strftime.Strftime, clock Clock, maxInterval time.Durat
 	var base time.Time
 	if now.Location() != time.UTC {
 		base = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), time.UTC)
-		base = base.Truncate(maxInterval)
+		base = base.Truncate(interval)
 		base = time.Date(base.Year(), base.Month(), base.Day(), base.Hour(), base.Minute(), base.Second(), base.Nanosecond(), base.Location())
 	} else {
-		base = now.Truncate(maxInterval)
+		base = now.Truncate(interval)
 	}
 
 	return pattern.FormatString(base)

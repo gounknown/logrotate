@@ -15,7 +15,6 @@ func ExampleNew() {
 
 	log.Printf("Hello, World!") // 13 bytes
 	log.Printf("Hello, World!") // 13 bytes
-	log.Printf("Hello, World!") // 13 bytes
 
 	files, _ := os.ReadDir("_logs")
 	for _, file := range files {

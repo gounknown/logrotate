@@ -22,11 +22,14 @@ var _ io.WriteCloser = (*Logger)(nil)
 type Logger struct {
 	opts *Options
 
-	pattern     *strftime.Strftime
-	globPattern string
+	pattern         *strftime.Strftime
+	globPattern     string
+	tzOffsetSeconds int64 // time zone offset in seconds
 
 	mu               sync.RWMutex // guards following
-	currFile         *os.File
+	file             *os.File
+	size             int64
+	lastRotateTime   int64 // Unix timestamp with location
 	currFilename     string
 	currBaseFilename string
 	currSequence     uint // sequential filename suffix
@@ -59,10 +62,13 @@ func New(pattern string, options ...Option) (*Logger, error) {
 		return nil, fmt.Errorf("option MaxSize cannot be < 0")
 	}
 
+	_, offset := opts.clock.Now().Zone()
+
 	return &Logger{
-		opts:        opts,
-		pattern:     filenamePattern,
-		globPattern: globPattern,
+		opts:            opts,
+		pattern:         filenamePattern,
+		globPattern:     globPattern,
+		tzOffsetSeconds: int64(offset),
 	}, nil
 }
 
@@ -75,12 +81,143 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	out, err := l.getWriterLocked(false, false)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get io.Writer: %v", err)
+	writeLen := int64(len(p))
+
+	if l.file == nil {
+		if err = l.openExistingOrNew(writeLen); err != nil {
+			return 0, err
+		}
 	}
 
-	return out.Write(p)
+	if l.size+writeLen > int64(l.opts.maxSize) {
+		if err := l.rotate(); err != nil {
+			return 0, err
+		}
+	} else {
+		if l.currBaseFilename != genBaseFilename(l.pattern, l.opts.clock, l.opts.maxInterval) {
+			if err := l.rotate(); err != nil {
+				return 0, err
+			}
+		}
+		// TODO: more effective interval compare
+		// if l.opts.maxInterval <= 0 {
+		// }
+		// if l.lastRotateTime == 0 || l.lastRotateTime != l.getLocalNowUnix()/{
+		// }
+	}
+
+	n, err = l.file.Write(p)
+	l.size += int64(n)
+
+	return n, err
+}
+
+// openExistingOrNew opens the logfile if it exists and if the current write
+// would not put it over MaxSize. If there is no such file or the write would
+// put it over the MaxSize, a new file is created.
+func (l *Logger) openExistingOrNew(writeLen int64) error {
+	l.mill()
+
+	filename := l.evalCurrentFilename(writeLen, false)
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return l.openNew(filename)
+	}
+	if err != nil {
+		return fmt.Errorf("error getting log file info: %s", err)
+	}
+
+	if info.Size()+writeLen >= int64(l.opts.maxSize) {
+		return l.rotate()
+	}
+
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		// if we fail to open the old log file for some reason, just ignore
+		// it and open a new log file.
+		return l.openNew(filename)
+	}
+	l.file = file
+	l.size = info.Size()
+	return nil
+}
+
+// rotate closes the current file, opens a new file based on rotation rule,
+// and then runs post-rotation processing and removal.
+func (l *Logger) rotate() error {
+	if err := l.close(); err != nil {
+		return err
+	}
+	filename := l.evalCurrentFilename(0, true)
+	if err := l.openNew(filename); err != nil {
+		return err
+	}
+	l.mill()
+	return nil
+}
+
+// getLocalNowUnix returns the seconds since the Unix epoch in Location.
+func (l *Logger) getLocalNowUnix() int64 {
+	return l.opts.clock.Now().Unix() + l.tzOffsetSeconds
+}
+
+// openNew opens a new log file for writing, moving any old log file out of the
+// way.  This methods assumes the file has already been closed.
+func (l *Logger) openNew(filename string) error {
+	dirname := filepath.Dir(filename)
+	err := os.MkdirAll(dirname, 0755)
+	if err != nil {
+		return fmt.Errorf("can't make directories for new logfile: %s", err)
+	}
+	// we use truncate here because this should only get called when we've moved
+	// the file ourselves. if someone else creates the file in the meantime,
+	// just wipe out the contents.
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("can't open new logfile: %s", err)
+	}
+	l.file = f
+	l.size = 0
+	return nil
+}
+
+// l.mu must be held by the caller.
+// take MaxSize and MaxInterval into consideration.
+func (l *Logger) evalCurrentFilename(writeLen int64, forceNewFile bool) string {
+	baseFilename := genBaseFilename(l.pattern, l.opts.clock, l.opts.maxInterval)
+	if baseFilename != l.currBaseFilename {
+		l.currBaseFilename = baseFilename
+		l.currSequence = 0
+	} else {
+		if forceNewFile || (l.opts.maxSize > 0 && l.size+writeLen > int64(l.opts.maxSize)) {
+			l.currSequence++
+		}
+	}
+
+	genFilename := func(basename string, seq uint) string {
+		if seq == 0 {
+			return basename
+		} else {
+			return fmt.Sprintf("%s.%d", basename, seq)
+		}
+	}
+
+	filename := genFilename(l.currBaseFilename, l.currSequence)
+	if forceNewFile {
+		// A new file has been requested. Instead of just using the
+		// regular strftime pattern, we create a new file name with
+		// sequence suffix such as "foo.1", "foo.2", "foo.3", etc
+		for {
+			if _, err := os.Stat(filename); err != nil {
+				// found the first IsNotExist file
+				break
+			}
+			l.currSequence++
+			filename = genFilename(l.currBaseFilename, l.currSequence)
+		}
+	}
+	l.currFilename = filename
+	return filename
 }
 
 // millRun runs in a goroutine to manage post-rotation compression and removal
@@ -123,9 +260,9 @@ func (l *Logger) millRunOnce() error {
 	}
 
 	if l.opts.linkName != "" {
-		// NOTE: file already sorted by ModeTime
+		// NOTE: file already sorted by ModTime
 		latestFilename := files[0].path
-		tmpLinkName := genSymlinkFilename(latestFilename)
+		tmpLinkName := latestFilename + ".symlink#"
 
 		// Change how the link name is generated based on where the
 		// target location is. if the location is directly underneath
@@ -162,7 +299,6 @@ func (l *Logger) millRunOnce() error {
 
 	// fmt.Printf("files[%d]: %v\n", len(files), files)
 
-	// the linter tells me to pre allocate this...
 	// TODO: compresess
 	var removals []*logfile
 
@@ -199,7 +335,7 @@ func (l *Logger) millRunOnce() error {
 	return nil
 }
 
-// getLogFiles returns all log files matched the glob pattern, sorted by ModTime.
+// getLogFiles returns all log files matched the globPattern, sorted by ModTime.
 func (l *Logger) getLogFiles() ([]*logfile, error) {
 	paths, err := filepath.Glob(l.globPattern)
 	if err != nil {
@@ -225,210 +361,6 @@ func (l *Logger) getLogFiles() ([]*logfile, error) {
 	return logFiles, nil
 }
 
-// l.mu must be held by the caller.
-func (l *Logger) getWriterLocked(bailOnRotateFail, rotateSuffixSeq bool) (io.Writer, error) {
-	// This filename contains the name of the "NEW" filename
-	// to log to, which may be newer than l.currentFilename
-	baseFilename := genFilename(l.pattern, l.opts.clock, l.opts.maxInterval)
-	filename := baseFilename
-
-	var forceNewFile, sizeRotation bool
-	fi, err := os.Stat(l.currFilename)
-	if err != nil {
-		// TODO: maybe removed by third-party, so need recover automatically
-		// tracef(os.Stderr, "%s", err)
-	} else {
-		if l.opts.maxSize > 0 && int64(l.opts.maxSize) <= fi.Size() {
-			forceNewFile = true
-			sizeRotation = true
-		}
-	}
-
-	currSequence := l.currSequence
-	if baseFilename != l.currBaseFilename {
-		currSequence = 0
-	} else {
-		if !rotateSuffixSeq && !sizeRotation {
-			// nothing to do
-			return l.currFile, nil
-		}
-		forceNewFile = true
-		currSequence++
-	}
-
-	if forceNewFile {
-		// A new file has been requested. Instead of just using the
-		// regular strftime pattern, we create a new file name with
-		// sequence suffix such as "foo.1", "foo.2", "foo.3", etc
-		var name string
-		for {
-			if currSequence == 0 {
-				name = filename
-			} else {
-				name = fmt.Sprintf("%s.%d", filename, currSequence)
-			}
-			if _, err := os.Stat(name); err != nil {
-				filename = name
-				break
-			}
-			currSequence++
-		}
-	}
-
-	file, err := createFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := l.rotateLocked(filename); err != nil {
-		err = fmt.Errorf("failed to rotate: %v", err)
-		if bailOnRotateFail {
-			// Failure to rotate is a problem, but it's really not a great
-			// idea to stop your application just because you couldn't rename
-			// your log.
-			//
-			// We only return this error when explicitly needed (as specified by bailOnRotateFail)
-			//
-			// However, we *NEED* to close `file` here
-			if file != nil { // probably can't happen, but being paranoid
-				file.Close()
-			}
-			return nil, err
-		}
-		tracef(os.Stderr, "%s", err)
-	}
-
-	l.currFile.Close()
-	l.currFile = file
-	l.currBaseFilename = baseFilename
-	l.currFilename = filename
-	l.currSequence = currSequence
-
-	return file, nil
-}
-
-// l.mu must be held by the caller.
-func (l *Logger) rotateLocked(filename string) error {
-	lockfn := genLockFilename(filename)
-	file, err := os.OpenFile(lockfn, os.O_CREATE|os.O_EXCL, 0644)
-	if err != nil {
-		// Can't lock, just return
-		return err
-	}
-
-	var guard cleanupGuard
-	guard.fn = func() {
-		file.Close()
-		os.Remove(lockfn)
-	}
-	defer guard.Run()
-
-	if l.opts.linkName != "" {
-		tmpLinkName := genSymlinkFilename(filename)
-
-		// Change how the link name is generated based on where the
-		// target location is. if the location is directly underneath
-		// the main filename's parent directory, then we create a
-		// symlink with a relative path
-		linkDest := filename
-		linkDir := filepath.Dir(l.opts.linkName)
-
-		baseDir := filepath.Dir(filename)
-		if strings.Contains(l.opts.linkName, baseDir) {
-			tmp, err := filepath.Rel(linkDir, filename)
-			if err != nil {
-				return fmt.Errorf("failed to evaluate relative path from %#v to %#v: %v", linkDir, filename, err)
-			}
-			linkDest = tmp
-		}
-
-		if err := os.Symlink(linkDest, tmpLinkName); err != nil {
-			return fmt.Errorf("failed to create new symlink: %v", err)
-		}
-
-		// the directory where l.opts.linkName should be created must exist
-		_, err := os.Stat(linkDir)
-		if err != nil { // Assume err != nil means the directory doesn't exist
-			if err := os.MkdirAll(linkDir, 0755); err != nil {
-				return fmt.Errorf("failed to create directory %s: %v", linkDir, err)
-			}
-		}
-
-		if err := os.Rename(tmpLinkName, l.opts.linkName); err != nil {
-			return fmt.Errorf("failed to rename new symlink %s -> %s: %v", tmpLinkName, l.opts.linkName, err)
-		}
-	}
-
-	files, err := filepath.Glob(l.globPattern)
-	if err != nil {
-		return err
-	}
-
-	// fmt.Printf("files[%d]: %v\n", len(files), files)
-
-	// the linter tells me to pre allocate this...
-	toRemove := make([]string, 0, len(files))
-
-	if l.opts.maxAge > 0 {
-		var remaining []string
-		cutoff := l.opts.clock.Now().Add(-1 * l.opts.maxAge)
-		for _, path := range files {
-			if isLockOrSymlinkFile(path) {
-				continue
-			}
-			fi, err := os.Stat(path)
-			if err != nil {
-				continue
-			}
-			// TODO: use timeformat in filename?
-			// Refer: https://github.com/natefinch/lumberjack/blob/v2.0/lumberjack.go#L400
-			if fi.ModTime().Before(cutoff) {
-				toRemove = append(toRemove, path)
-			} else {
-				remaining = append(remaining, path)
-			}
-		}
-		files = remaining
-	}
-
-	if l.opts.maxBackups > 0 && l.opts.maxBackups < len(files) {
-		preserved := make(map[string]bool)
-		for _, path := range files {
-			if isLockOrSymlinkFile(path) {
-				continue
-			}
-			fl, err := os.Lstat(path)
-			if err != nil {
-				continue
-			}
-			if fl.Mode()&os.ModeSymlink == os.ModeSymlink {
-				continue
-			}
-			preserved[path] = true
-			if len(preserved) > l.opts.maxBackups {
-				// Only remove if we have more than MaxBackups
-				toRemove = append(toRemove, path)
-			}
-		}
-	}
-
-	// fmt.Printf("remove[%d]: %v\n", len(toRemove), toRemove)
-
-	if len(toRemove) <= 0 {
-		return nil
-	}
-
-	guard.Enable()
-	go func() {
-		// unlink files on a separate goroutine
-		for _, path := range toRemove {
-			os.Remove(path)
-		}
-	}()
-
-	return nil
-}
-
 // Close implements io.Closer, and closes the current logfile.
 func (l *Logger) Close() error {
 	l.mu.Lock()
@@ -438,11 +370,11 @@ func (l *Logger) Close() error {
 
 // close closes the file if it is open.
 func (l *Logger) close() error {
-	if l.currFile == nil {
+	if l.file == nil {
 		return nil
 	}
-	err := l.currFile.Close()
-	l.currFile = nil
+	err := l.file.Close()
+	l.file = nil
 	return err
 }
 
@@ -458,9 +390,7 @@ func (l *Logger) close() error {
 func (l *Logger) Rotate() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	_, err := l.getWriterLocked(true, true)
-
-	return err
+	return l.rotate()
 }
 
 // currentFilename returns filename the Logger object is writing to.
