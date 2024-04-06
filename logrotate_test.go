@@ -13,12 +13,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// go test -bench ^BenchmarkLogRotate$ -benchmem -benchtime=10s -cpuprofile=profile.out
+// go tool pprof -http=:8080 profile.out
 func BenchmarkLogRotate(b *testing.B) {
 	dir := filepath.Join(os.TempDir(), "logrotate-benchmark")
 	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
 		WithLinkName(filepath.Join(dir, "log")),
 		WithMaxSize(10),
+		// WithMaxInterval(time.Second),
 		WithMaxAge(24*time.Hour),
 		WithMaxBackups(10),
 	)
