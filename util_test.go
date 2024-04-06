@@ -59,7 +59,7 @@ func Test_genFilename(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := genFilename(tt.args.pattern, tt.args.clock, tt.args.rotationTime); got != tt.want {
+			if got := genBaseFilename(tt.args.pattern, tt.args.clock, tt.args.rotationTime); got != tt.want {
 				t.Errorf("genFilename() = %v, want %v", got, tt.want)
 			}
 		})
