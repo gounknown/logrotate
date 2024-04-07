@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lestrrat-go/strftime"
@@ -106,10 +108,21 @@ type logfile struct {
 	os.FileInfo
 }
 
-// byModTime sorts by file modification time.
+// byModTime sorts files by modification time in descending order.
 type byModTime []*logfile
 
 func (b byModTime) Less(i, j int) bool {
+	parseSuffixSeq := func(path string) int {
+		suffixSeqStr := strings.TrimPrefix(filepath.Ext(path), ".")
+		seq, _ := strconv.Atoi(suffixSeqStr)
+		return seq
+	}
+	if b[i].ModTime() == b[j].ModTime() {
+		// For most file systems, sub-second information is not available. So we
+		// need to compare the suffix sequence.
+		// e.g.: ext3 only supports second level precision.
+		return parseSuffixSeq(b[i].path) > parseSuffixSeq(b[j].path)
+	}
 	return b[i].ModTime().After(b[j].ModTime())
 }
 

@@ -15,6 +15,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer l.Close()
+
 	log.SetOutput(l)
 
 	log.Printf("Hello, World!")

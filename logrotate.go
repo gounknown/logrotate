@@ -17,15 +17,15 @@ import (
 // ensure we always implement io.WriteCloser
 var _ io.WriteCloser = (*Logger)(nil)
 
-// Logger is an io.WriteCloser that writes to the specified filename. It
+// Logger is an io.WriteCloser that writes to the appropriate filename. It
 // can get automatically rotated as you write to it.
 type Logger struct {
-	opts *Options
-
-	pattern              *strftime.Strftime
-	globPattern          string
-	maxIntervalInSeconds int64 // max interval in seconds
-	tzOffsetSeconds      int64 // time zone offset in seconds
+	// Read-only fields after *New* method inited.
+	opts               *Options
+	pattern            *strftime.Strftime
+	globPattern        string
+	maxIntervalSeconds int64 // max interval in seconds
+	tzOffsetSeconds    int64 // time zone offset in seconds
 
 	mu               sync.RWMutex // guards following
 	file             *os.File
@@ -35,9 +35,9 @@ type Logger struct {
 	currBaseFilename string
 	currSequence     uint // sequential filename suffix
 
-	// control background mill goroutine
-	millCh    chan bool
-	startMill sync.Once
+	// mill goroutine running in background
+	millCh   chan bool
+	millDone chan struct{}
 }
 
 // New creates a new concurrent safe Logger object with the provided
@@ -66,19 +66,30 @@ func New(pattern string, options ...Option) (*Logger, error) {
 
 	_, offset := opts.clock.Now().Zone()
 
-	return &Logger{
-		opts:                 opts,
-		pattern:              filenamePattern,
-		globPattern:          globPattern,
-		maxIntervalInSeconds: maxIntervalInSeconds,
-		tzOffsetSeconds:      int64(offset),
-	}, nil
+	l := &Logger{
+		opts:               opts,
+		pattern:            filenamePattern,
+		globPattern:        globPattern,
+		maxIntervalSeconds: maxIntervalInSeconds,
+		tzOffsetSeconds:    int64(offset),
+		// mill goroutine
+		millCh:   make(chan bool, 1),
+		millDone: make(chan struct{}),
+	}
+
+	// starting the mill goroutine
+	go l.millRun()
+
+	return l, nil
 }
 
-// Write satisfies the io.Writer interface. It writes to the
-// appropriate file handle that is currently being used.
-// If we have reached rotation time, the target file gets
-// automatically rotated, and also purged if necessary.
+// Write implements io.Writer. It writes to the target file handle that is
+// currently being used.
+//
+// If a write would cause the log file to be larger than MaxSize, or we have
+// reached a new rotation time (evaluated based on MaxInterval), the target
+// file would get automatically rotated, and old log files would also be purged
+// if necessary.
 func (l *Logger) Write(p []byte) (n int, err error) {
 	// Guard against concurrent writes
 	l.mu.Lock()
@@ -91,24 +102,17 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 			return 0, err
 		}
 	}
-
+	// Factor 1: MaxSize
 	if l.opts.maxSize > 0 && l.size+writeLen > int64(l.opts.maxSize) {
 		if err := l.rotate(); err != nil {
 			return 0, err
 		}
 	} else {
-		// if l.currBaseFilename != genBaseFilename(l.pattern, l.opts.clock, l.opts.maxInterval) {
-		// 	if err := l.rotate(); err != nil {
-		// 		return 0, err
-		// 	}
-		// }
-		// TODO: more effective interval compare
-		if l.maxIntervalInSeconds > 0 {
-			rotationTime := evalCurrRotationTime(l.opts.clock, l.tzOffsetSeconds, l.maxIntervalInSeconds)
-			if l.currRotationTime != rotationTime {
-				if err := l.rotate(); err != nil {
-					return 0, err
-				}
+		// Factor 2: MaxInterval
+		if l.maxIntervalSeconds > 0 &&
+			l.currRotationTime != evalCurrRotationTime(l.opts.clock, l.tzOffsetSeconds, l.maxIntervalSeconds) {
+			if err := l.rotate(); err != nil {
+				return 0, err
 			}
 		}
 	}
@@ -124,10 +128,10 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 func (l *Logger) evalCurrentFilename(writeLen int64, forceNewFile bool) string {
 	baseFilename := l.currBaseFilename
 	if l.currBaseFilename == "" {
-		l.currRotationTime = evalCurrRotationTime(l.opts.clock, l.tzOffsetSeconds, l.maxIntervalInSeconds)
+		l.currRotationTime = evalCurrRotationTime(l.opts.clock, l.tzOffsetSeconds, l.maxIntervalSeconds)
 		baseFilename = genBaseFilename(l.pattern, l.opts.clock, l.currRotationTime)
-	} else if l.maxIntervalInSeconds > 0 {
-		rotationTime := evalCurrRotationTime(l.opts.clock, l.tzOffsetSeconds, l.maxIntervalInSeconds)
+	} else if l.maxIntervalSeconds > 0 {
+		rotationTime := evalCurrRotationTime(l.opts.clock, l.tzOffsetSeconds, l.maxIntervalSeconds)
 		if l.currRotationTime != rotationTime {
 			l.currRotationTime = rotationTime
 			baseFilename = genBaseFilename(l.pattern, l.opts.clock, l.currRotationTime)
@@ -237,19 +241,23 @@ func (l *Logger) openNew(filename string) error {
 // millRun runs in a goroutine to manage post-rotation compression and removal
 // of old log files.
 func (l *Logger) millRun() {
-	for range l.millCh {
-		// what am I going to do, log this?
-		_ = l.millRunOnce()
+	for {
+		select {
+		case <-l.millDone:
+			if len(l.millCh) != 0 {
+				// what am I going to do, log this?
+				_ = l.millRunOnce()
+			}
+			return
+		case <-l.millCh:
+			// what am I going to do, log this?
+			_ = l.millRunOnce()
+		}
 	}
 }
 
-// mill performs post-rotation compression and removal of stale log files,
-// starting the mill goroutine if necessary.
+// mill performs post-rotation compression and removal of stale log files.
 func (l *Logger) mill() {
-	l.startMill.Do(func() {
-		l.millCh = make(chan bool, 1)
-		go l.millRun()
-	})
 	select {
 	case l.millCh <- true:
 	default:
@@ -274,7 +282,7 @@ func (l *Logger) millRunOnce() error {
 	}
 
 	if l.opts.linkName != "" {
-		// NOTE: file already sorted by ModTime
+		// NOTE: files already sorted by modification time in descending order.
 		latestFilename := files[0].path
 		tmpLinkName := latestFilename + ".symlink#"
 
@@ -343,7 +351,8 @@ func (l *Logger) millRunOnce() error {
 	// fmt.Printf("removals[%d]: %v\n", len(removals), removals)
 
 	for _, f := range removals {
-		os.Remove(f.path)
+		// FIXME: need return if encounted an error
+		_ = os.Remove(f.path)
 	}
 
 	return nil
@@ -375,10 +384,12 @@ func (l *Logger) getLogFiles() ([]*logfile, error) {
 	return logFiles, nil
 }
 
-// Close implements io.Closer, and closes the current logfile.
+// Close implements io.Closer. It closes the current log file and
+// the mill goroutine running in background.
 func (l *Logger) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.millDone <- struct{}{} // close mill goroutine
 	return l.close()
 }
 
