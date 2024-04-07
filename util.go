@@ -57,24 +57,6 @@ func genBaseFilename(pattern *strftime.Strftime, clock Clock, interval time.Dura
 	return pattern.FormatString(base)
 }
 
-// createFile creates a new file in the given path, creating parent directories
-// as necessary
-func createFile(filename string) (*os.File, error) {
-	// make sure the parent dir is existed, e.g.:
-	// ./foo/bar/baz/hello.log must make sure ./foo/bar/baz is existed
-	dirname := filepath.Dir(filename)
-	if err := os.MkdirAll(dirname, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create directory for new logfile: %s", err)
-	}
-	// if we got here, then we need to create a file
-	fh, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open new logfile %s: %s", filename, err)
-	}
-
-	return fh, nil
-}
-
 var patternConversionRegexps = []*regexp.Regexp{
 	regexp.MustCompile(`%[%+A-Za-z]`), // strftime format pattern
 	regexp.MustCompile(`\*+`),         // one or multiple *

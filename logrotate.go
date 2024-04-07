@@ -54,8 +54,8 @@ func New(pattern string, options ...Option) (*Logger, error) {
 	if opts.maxAge < 0 {
 		return nil, fmt.Errorf("option MaxAge cannot be < 0")
 	}
-	if opts.maxInterval < 0 {
-		return nil, fmt.Errorf("option MaxInterval cannot be < 0")
+	if opts.maxInterval.Seconds() < 0 {
+		return nil, fmt.Errorf("option MaxInterval in seconds cannot be < 0")
 	}
 
 	if opts.maxSize < 0 {
@@ -89,7 +89,7 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 		}
 	}
 
-	if l.size+writeLen > int64(l.opts.maxSize) {
+	if l.opts.maxSize > 0 && l.size+writeLen > int64(l.opts.maxSize) {
 		if err := l.rotate(); err != nil {
 			return 0, err
 		}
@@ -100,9 +100,15 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 			}
 		}
 		// TODO: more effective interval compare
-		// if l.opts.maxInterval <= 0 {
-		// }
-		// if l.lastRotateTime == 0 || l.lastRotateTime != l.getLocalNowUnix()/{
+		// if l.opts.maxInterval > 0 {
+		// 	now := l.getLocalNowUnix()
+		// 	currRotateTime := now - (now % int64(l.opts.maxInterval.Seconds()))
+		// 	if l.lastRotateTime == 0 || l.lastRotateTime != currRotateTime {
+		// 		l.lastRotateTime = currRotateTime
+		// 		if err := l.rotate(); err != nil {
+		// 			return 0, err
+		// 		}
+		// 	}
 		// }
 	}
 
@@ -127,7 +133,7 @@ func (l *Logger) openExistingOrNew(writeLen int64) error {
 		return fmt.Errorf("error getting log file info: %s", err)
 	}
 
-	if info.Size()+writeLen >= int64(l.opts.maxSize) {
+	if l.opts.maxSize > 0 && info.Size()+writeLen >= int64(l.opts.maxSize) {
 		return l.rotate()
 	}
 
