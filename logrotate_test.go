@@ -17,12 +17,37 @@ import (
 // go tool pprof -http=:8080 profile.out
 func BenchmarkMaxBackups1000(b *testing.B) {
 	dir := filepath.Join(os.TempDir(), "logrotate", "BenchmarkMaxBackups1000")
-	// defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
 		WithLinkName(filepath.Join(dir, "log")),
 		WithMaxSize(10),
-		// WithMaxInterval(time.Second),
-		WithMaxAge(24*time.Hour),
+		// WithMaxAge(3*time.Second),
+		WithMaxBackups(1000),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer l.Close()
+	logline := []byte("Hello, World")
+	for i := 0; i < b.N; i++ {
+		n, err := l.Write(logline)
+		if err != nil {
+			panic(err)
+		}
+		if n != len(logline) {
+			panic("write length not matched")
+		}
+	}
+}
+
+func BenchmarkMaxInterval(b *testing.B) {
+	dir := filepath.Join(os.TempDir(), "logrotate", "BenchmarkMaxInterval")
+	defer os.RemoveAll(dir)
+	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
+		WithLinkName(filepath.Join(dir, "log")),
+		WithMaxSize(10),
+		WithMaxInterval(time.Second),
+		// WithMaxAge(3*time.Second),
 		WithMaxBackups(1000),
 	)
 	if err != nil {
@@ -193,7 +218,7 @@ func TestLogRotate(t *testing.T) {
 			if string(content) != str {
 				t.Errorf(`File content does not match (was "%s")`, content)
 			}
-
+			// wait for mill background goroutine
 			time.Sleep(100 * time.Millisecond)
 
 			// fn was declared above, before mocking CurrentTime
@@ -381,22 +406,27 @@ func TestRotationSuffixSeq(t *testing.T) {
 		defer l.Close()
 	})
 	t.Run("Rotate over pattern change over every second", func(t *testing.T) {
+		pattern := filepath.Join(dir, "every-second-pattern-%Y%m%d%H%M%S.log")
 		l, err := New(
-			filepath.Join(dir, "every-second-pattern-%Y%m%d%H%M%S.log"),
-			WithMaxInterval(time.Millisecond),
+			pattern,
+			WithMaxInterval(time.Second),
 		)
 		if !assert.NoError(t, err, `New should succeed`) {
 			return
 		}
 
+		l.Write([]byte("init")) // first write
 		for i := 0; i < 5; i++ {
+			time.Sleep(time.Second)
 			l.Write([]byte("Hello, World!"))
+			if !assert.True(t, strings.HasSuffix(l.currentFilename(), ".log"), "log name should end with .log") {
+				return
+			}
 			if !assert.NoError(t, l.Rotate(), "l.Rotate should succeed") {
 				return
 			}
-			time.Sleep(time.Second)
 			// because every new Write should yield a new logfile,
-			// every rorate should be create a filename ending with a .1
+			// every rotate should create a filename ending with a .1
 			if !assert.True(t, strings.HasSuffix(l.currentFilename(), ".1"), "log name should end with .1") {
 				return
 			}

@@ -111,6 +111,7 @@ If not provided, no link will be written.
 ### MaxInterval (default: 24 hours)
 
 Interval between file rotation. By default logs are rotated every 24 hours.
+In particular, the minimal interval unit is in time.Second level.
 
 Note: Remember to use time.Duration values.
 

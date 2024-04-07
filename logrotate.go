@@ -22,14 +22,15 @@ var _ io.WriteCloser = (*Logger)(nil)
 type Logger struct {
 	opts *Options
 
-	pattern         *strftime.Strftime
-	globPattern     string
-	tzOffsetSeconds int64 // time zone offset in seconds
+	pattern              *strftime.Strftime
+	globPattern          string
+	maxIntervalInSeconds int64 // max interval in seconds
+	tzOffsetSeconds      int64 // time zone offset in seconds
 
 	mu               sync.RWMutex // guards following
 	file             *os.File
 	size             int64
-	lastRotateTime   int64 // Unix timestamp with location
+	currRotationTime int64 // Unix timestamp with location
 	currFilename     string
 	currBaseFilename string
 	currSequence     uint // sequential filename suffix
@@ -54,7 +55,8 @@ func New(pattern string, options ...Option) (*Logger, error) {
 	if opts.maxAge < 0 {
 		return nil, fmt.Errorf("option MaxAge cannot be < 0")
 	}
-	if opts.maxInterval.Seconds() < 0 {
+	maxIntervalInSeconds := int64(opts.maxInterval.Seconds())
+	if maxIntervalInSeconds < 0 {
 		return nil, fmt.Errorf("option MaxInterval in seconds cannot be < 0")
 	}
 
@@ -65,10 +67,11 @@ func New(pattern string, options ...Option) (*Logger, error) {
 	_, offset := opts.clock.Now().Zone()
 
 	return &Logger{
-		opts:            opts,
-		pattern:         filenamePattern,
-		globPattern:     globPattern,
-		tzOffsetSeconds: int64(offset),
+		opts:                 opts,
+		pattern:              filenamePattern,
+		globPattern:          globPattern,
+		maxIntervalInSeconds: maxIntervalInSeconds,
+		tzOffsetSeconds:      int64(offset),
 	}, nil
 }
 
@@ -94,28 +97,77 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 			return 0, err
 		}
 	} else {
-		if l.currBaseFilename != genBaseFilename(l.pattern, l.opts.clock, l.opts.maxInterval) {
-			if err := l.rotate(); err != nil {
-				return 0, err
-			}
-		}
-		// TODO: more effective interval compare
-		// if l.opts.maxInterval > 0 {
-		// 	now := l.getLocalNowUnix()
-		// 	currRotateTime := now - (now % int64(l.opts.maxInterval.Seconds()))
-		// 	if l.lastRotateTime == 0 || l.lastRotateTime != currRotateTime {
-		// 		l.lastRotateTime = currRotateTime
-		// 		if err := l.rotate(); err != nil {
-		// 			return 0, err
-		// 		}
+		// if l.currBaseFilename != genBaseFilename(l.pattern, l.opts.clock, l.opts.maxInterval) {
+		// 	if err := l.rotate(); err != nil {
+		// 		return 0, err
 		// 	}
 		// }
+		// TODO: more effective interval compare
+		if l.maxIntervalInSeconds > 0 {
+			rotationTime := evalCurrRotationTime(l.opts.clock, l.tzOffsetSeconds, l.maxIntervalInSeconds)
+			if l.currRotationTime != rotationTime {
+				if err := l.rotate(); err != nil {
+					return 0, err
+				}
+			}
+		}
 	}
 
 	n, err = l.file.Write(p)
 	l.size += int64(n)
 
 	return n, err
+}
+
+// l.mu must be held by the caller.
+// take MaxSize and MaxInterval into consideration.
+func (l *Logger) evalCurrentFilename(writeLen int64, forceNewFile bool) string {
+	baseFilename := l.currBaseFilename
+	if l.currBaseFilename == "" {
+		l.currRotationTime = evalCurrRotationTime(l.opts.clock, l.tzOffsetSeconds, l.maxIntervalInSeconds)
+		baseFilename = genBaseFilename(l.pattern, l.opts.clock, l.currRotationTime)
+	} else if l.maxIntervalInSeconds > 0 {
+		rotationTime := evalCurrRotationTime(l.opts.clock, l.tzOffsetSeconds, l.maxIntervalInSeconds)
+		if l.currRotationTime != rotationTime {
+			l.currRotationTime = rotationTime
+			baseFilename = genBaseFilename(l.pattern, l.opts.clock, l.currRotationTime)
+		}
+	}
+
+	if baseFilename != l.currBaseFilename {
+		l.currBaseFilename = baseFilename
+		l.currSequence = 0
+	} else {
+		if forceNewFile || (l.opts.maxSize > 0 && l.size+writeLen > int64(l.opts.maxSize)) {
+			l.currSequence++
+		}
+	}
+
+	genFilename := func(basename string, seq uint) string {
+		if seq == 0 {
+			return basename
+		} else {
+			return fmt.Sprintf("%s.%d", basename, seq)
+		}
+	}
+
+	filename := genFilename(l.currBaseFilename, l.currSequence)
+	if forceNewFile {
+		// A new file has been requested. Instead of just using the
+		// regular strftime pattern, we create a new file name with
+		// sequence suffix such as "foo.1", "foo.2", "foo.3", etc
+		for {
+			if _, err := os.Stat(filename); err != nil {
+				// found the first IsNotExist file
+				break
+			}
+			l.currSequence++
+			filename = genFilename(l.currBaseFilename, l.currSequence)
+		}
+	}
+
+	l.currFilename = filename
+	return filename
 }
 
 // openExistingOrNew opens the logfile if it exists and if the current write
@@ -162,11 +214,6 @@ func (l *Logger) rotate() error {
 	return nil
 }
 
-// getLocalNowUnix returns the seconds since the Unix epoch in Location.
-func (l *Logger) getLocalNowUnix() int64 {
-	return l.opts.clock.Now().Unix() + l.tzOffsetSeconds
-}
-
 // openNew opens a new log file for writing, moving any old log file out of the
 // way.  This methods assumes the file has already been closed.
 func (l *Logger) openNew(filename string) error {
@@ -185,45 +232,6 @@ func (l *Logger) openNew(filename string) error {
 	l.file = f
 	l.size = 0
 	return nil
-}
-
-// l.mu must be held by the caller.
-// take MaxSize and MaxInterval into consideration.
-func (l *Logger) evalCurrentFilename(writeLen int64, forceNewFile bool) string {
-	baseFilename := genBaseFilename(l.pattern, l.opts.clock, l.opts.maxInterval)
-	if baseFilename != l.currBaseFilename {
-		l.currBaseFilename = baseFilename
-		l.currSequence = 0
-	} else {
-		if forceNewFile || (l.opts.maxSize > 0 && l.size+writeLen > int64(l.opts.maxSize)) {
-			l.currSequence++
-		}
-	}
-
-	genFilename := func(basename string, seq uint) string {
-		if seq == 0 {
-			return basename
-		} else {
-			return fmt.Sprintf("%s.%d", basename, seq)
-		}
-	}
-
-	filename := genFilename(l.currBaseFilename, l.currSequence)
-	if forceNewFile {
-		// A new file has been requested. Instead of just using the
-		// regular strftime pattern, we create a new file name with
-		// sequence suffix such as "foo.1", "foo.2", "foo.3", etc
-		for {
-			if _, err := os.Stat(filename); err != nil {
-				// found the first IsNotExist file
-				break
-			}
-			l.currSequence++
-			filename = genFilename(l.currBaseFilename, l.currSequence)
-		}
-	}
-	l.currFilename = filename
-	return filename
 }
 
 // millRun runs in a goroutine to manage post-rotation compression and removal

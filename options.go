@@ -56,6 +56,7 @@ func WithLinkName(name string) Option {
 }
 
 // WithMaxInterval sets the maximum interval between file rotation.
+// In particular, the minimal interval unit is in time.Second level.
 //
 // Default: 24 hours
 func WithMaxInterval(d time.Duration) Option {
