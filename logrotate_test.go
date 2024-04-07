@@ -13,17 +13,40 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// go test -bench ^BenchmarkLogRotate$ -benchmem -benchtime=10s -cpuprofile=profile.out
+// go test -bench ^BenchmarkMaxBackups1000$ -benchmem -benchtime=10s -cpuprofile=profile.out
 // go tool pprof -http=:8080 profile.out
-func BenchmarkLogRotate(b *testing.B) {
-	dir := filepath.Join(os.TempDir(), "logrotate-benchmark")
-	defer os.RemoveAll(dir)
+func BenchmarkMaxBackups1000(b *testing.B) {
+	dir := filepath.Join(os.TempDir(), "logrotate", "BenchmarkMaxBackups1000")
+	// defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
 		WithLinkName(filepath.Join(dir, "log")),
 		WithMaxSize(10),
 		// WithMaxInterval(time.Second),
 		WithMaxAge(24*time.Hour),
-		WithMaxBackups(10),
+		WithMaxBackups(1000),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer l.Close()
+	logline := []byte("Hello, World")
+	for i := 0; i < b.N; i++ {
+		n, err := l.Write(logline)
+		if err != nil {
+			panic(err)
+		}
+		if n != len(logline) {
+			panic("write length not matched")
+		}
+	}
+}
+
+func BenchmarkNoRotate(b *testing.B) {
+	dir := filepath.Join(os.TempDir(), "logrotate", "BenchmarkNoRotate")
+	defer os.RemoveAll(dir)
+	l, err := New(filepath.Join(dir, "log%Y%m%d%H"),
+		WithLinkName(filepath.Join(dir, "log")),
+		WithMaxSize(0),
 	)
 	if err != nil {
 		panic(err)
@@ -306,8 +329,8 @@ func TestLogSetOutput(t *testing.T) {
 	}
 }
 
-func TestRotationSuffixSeqNames(t *testing.T) {
-	dir := filepath.Join(os.TempDir(), "logrotate-suffix-seq")
+func TestRotationSuffixSeq(t *testing.T) {
+	dir := filepath.Join(os.TempDir(), "logrotate", "TestRotationSuffixSeq")
 	defer os.RemoveAll(dir)
 
 	t.Run("Rotate over unchanged pattern", func(t *testing.T) {
@@ -389,7 +412,7 @@ func (f ClockFunc) Now() time.Time {
 }
 
 func TestTimeZone(t *testing.T) {
-	dir := filepath.Join(os.TempDir(), "logrotate-suffix-seq")
+	dir := filepath.Join(os.TempDir(), "logrotate", "TestTimeZone")
 	defer os.RemoveAll(dir)
 
 	for _, locName := range []string{"Asia/Tokyo", "Pacific/Honolulu"} {
