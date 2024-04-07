@@ -21,6 +21,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer l.Close()
 
 	w := zapcore.AddSync(l)
 	core := zapcore.NewCore(
