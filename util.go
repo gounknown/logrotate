@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"sync"
 	"time"
 
 	"github.com/lestrrat-go/strftime"
@@ -30,10 +29,10 @@ func (systemClock) Now() time.Time {
 	return time.Now()
 }
 
-// genBaseFilename creates a file name based on pattern, clock, and interval.
+// genBaseFilename2 creates a file name based on pattern, clock, and interval.
 //
-// The base time used to generate the filename is truncated based on nterval.
-func genBaseFilename(pattern *strftime.Strftime, clock Clock, interval time.Duration) string {
+// The base time used to generate the filename is truncated based on interval.
+func genBaseFilename2(pattern *strftime.Strftime, clock Clock, interval time.Duration) string {
 	now := clock.Now()
 	// XXX HACK: Truncate only happens in UTC semantics, apparently.
 	// observed values for truncating given time with 86400 secs:
@@ -55,6 +54,21 @@ func genBaseFilename(pattern *strftime.Strftime, clock Clock, interval time.Dura
 	}
 
 	return pattern.FormatString(base)
+}
+
+func genBaseFilename(pattern *strftime.Strftime, clock Clock, rotationTime int64) string {
+	now := clock.Now()
+	_, offset := now.Zone()
+	t := time.Unix(rotationTime-int64(offset), 0)
+	base := t.In(now.Location())
+	return pattern.FormatString(base)
+}
+
+// evalCurrRotationTime evaluates the current rotation time in seconds
+// at interval scale since the Unix epoch in Location (timezone offset).
+func evalCurrRotationTime(clock Clock, tzOffset, interval int64) int64 {
+	now := clock.Now().Unix() + tzOffset
+	return now - (now % interval)
 }
 
 var patternConversionRegexps = []*regexp.Regexp{
@@ -85,22 +99,6 @@ func tracef(w io.Writer, format string, args ...any) (int, error) {
 	}
 	args = append(traceArgs, args...)
 	return fmt.Fprintf(w, "%s:%d %s "+format+"\n", args...)
-}
-
-type cleanupGuard struct {
-	enable bool
-	fn     func()
-	mutex  sync.Mutex
-}
-
-func (g *cleanupGuard) Enable() {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
-	g.enable = true
-}
-
-func (g *cleanupGuard) Run() {
-	g.fn()
 }
 
 type logfile struct {
