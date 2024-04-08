@@ -7,7 +7,7 @@ import (
 // Options is supplied as the optional arguments for New.
 type Options struct {
 	clock       Clock
-	linkName    string
+	symlink     string
 	maxInterval time.Duration
 	maxSize     int
 	maxAge      time.Duration
@@ -20,7 +20,7 @@ type Option func(*Options)
 func newDefaultOptions() *Options {
 	return &Options{
 		clock:       DefaultClock,
-		linkName:    "",                // no link name
+		symlink:     "",                // no symlink
 		maxInterval: 24 * time.Hour,    // 24 hours
 		maxSize:     100 * 1024 * 1024, // 100M
 		maxAge:      0,                 // retain all old log files
@@ -45,13 +45,13 @@ func WithClock(clock Clock) Option {
 	}
 }
 
-// WithLinkName sets the symbolic link name that gets linked to
+// WithSymlink sets the symbolic link name that gets linked to
 // the current filename being used.
 //
 // Default: ""
-func WithLinkName(name string) Option {
+func WithSymlink(name string) Option {
 	return func(opts *Options) {
-		opts.linkName = name
+		opts.symlink = name
 	}
 }
 
@@ -79,7 +79,7 @@ func WithMaxSize(s int) Option {
 // timestamp encoded in their filename. 0 means not to remove
 // old log files based on age.
 //
-// Default: 7 days
+// Default: 0
 func WithMaxAge(d time.Duration) Option {
 	return func(opts *Options) {
 		opts.maxAge = d

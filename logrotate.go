@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/lestrrat-go/strftime"
@@ -38,6 +37,7 @@ type Logger struct {
 	// mill goroutine running in background
 	millCh   chan bool
 	millDone chan struct{}
+	wg       sync.WaitGroup // counts active background goroutines
 }
 
 // New creates a new concurrent safe Logger object with the provided
@@ -78,7 +78,11 @@ func New(pattern string, options ...Option) (*Logger, error) {
 	}
 
 	// starting the mill goroutine
-	go l.millRun()
+	l.wg.Add(1)
+	go func() {
+		l.wg.Done()
+		l.millRun()
+	}()
 
 	return l, nil
 }
@@ -94,10 +98,15 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	// Guard against concurrent writes
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	return l.write(p)
+}
 
+func (l *Logger) write(p []byte) (n int, err error) {
 	writeLen := int64(len(p))
 
-	if l.file == nil {
+	// The os.Stat method cost is: 256 B/op, 2 allocs/op
+	_, err = os.Stat(l.currFilename)
+	if l.file == nil || os.IsNotExist(err) {
 		if err = l.openExistingOrNew(writeLen); err != nil {
 			return 0, err
 		}
@@ -118,6 +127,12 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	}
 
 	n, err = l.file.Write(p)
+	if err != nil {
+		tracef(os.Stderr, "failed to write: %v, so try to open existing or new file", err)
+		if err = l.openExistingOrNew(writeLen); err != nil {
+			return 0, err
+		}
+	}
 	l.size += int64(n)
 
 	return n, err
@@ -178,7 +193,7 @@ func (l *Logger) evalCurrentFilename(writeLen int64, forceNewFile bool) string {
 // would not put it over MaxSize. If there is no such file or the write would
 // put it over the MaxSize, a new file is created.
 func (l *Logger) openExistingOrNew(writeLen int64) error {
-	l.mill()
+	defer l.mill()
 
 	filename := l.evalCurrentFilename(writeLen, false)
 	info, err := os.Stat(filename)
@@ -268,58 +283,27 @@ func (l *Logger) mill() {
 // files are removed, keeping at most MaxBackups files, as long as
 // none of them are older than MaxAge.
 func (l *Logger) millRunOnce() error {
-	if l.opts.maxBackups == 0 && l.opts.maxAge == 0 {
-		return nil
-	}
-
 	files, err := l.getLogFiles()
 	if err != nil {
 		return err
 	}
-
 	if len(files) == 0 {
 		return nil
 	}
 
-	if l.opts.linkName != "" {
+	if l.opts.symlink != "" {
 		// NOTE: files already sorted by modification time in descending order.
 		latestFilename := files[0].path
-		tmpLinkName := latestFilename + ".symlink#"
-
-		// Change how the link name is generated based on where the
-		// target location is. if the location is directly underneath
-		// the main filename's parent directory, then we create a
-		// symlink with a relative path
-		linkDest := latestFilename
-		linkDir := filepath.Dir(l.opts.linkName)
-
-		baseDir := filepath.Dir(latestFilename)
-		if strings.Contains(l.opts.linkName, baseDir) {
-			tmp, err := filepath.Rel(linkDir, latestFilename)
-			if err != nil {
-				return fmt.Errorf("failed to evaluate relative path from %#v to %#v: %v", linkDir, latestFilename, err)
-			}
-			linkDest = tmp
-		}
-
-		if err := os.Symlink(linkDest, tmpLinkName); err != nil {
-			return fmt.Errorf("failed to create new symlink: %v", err)
-		}
-
-		// the directory where LinkName should be created must exist
-		_, err := os.Stat(linkDir)
-		if err != nil { // Assume err != nil means the directory doesn't exist
-			if err := os.MkdirAll(linkDir, 0755); err != nil {
-				return fmt.Errorf("failed to create directory %s: %v", linkDir, err)
-			}
-		}
-
-		if err := os.Rename(tmpLinkName, l.opts.linkName); err != nil {
-			return fmt.Errorf("failed to rename new symlink %s -> %s: %v", tmpLinkName, l.opts.linkName, err)
+		if err := link(latestFilename, l.opts.symlink); err != nil {
+			return err
 		}
 	}
 
 	// fmt.Printf("files[%d]: %v\n", len(files), files)
+
+	if l.opts.maxBackups == 0 && l.opts.maxAge == 0 {
+		return nil
+	}
 
 	// TODO: compresess
 	var removals []*logfile
@@ -390,6 +374,7 @@ func (l *Logger) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.millDone <- struct{}{} // close mill goroutine
+	l.wg.Wait()
 	return l.close()
 }
 

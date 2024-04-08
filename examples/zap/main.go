@@ -13,10 +13,10 @@ func main() {
 	// logrotate is safe for concurrent use, so we don't need to lock it.
 	l, err := logrotate.New(
 		"_logs/app.%Y%m%d%H.log",
-		logrotate.WithLinkName("_logs/app"),
-		logrotate.WithMaxAge(24*time.Hour),
-		logrotate.WithMaxSize(10), // 10 bytes
-		logrotate.WithMaxInterval(time.Hour),
+		logrotate.WithSymlink("_logs/app"),    // symlink to current logfile
+		logrotate.WithMaxAge(30*24*time.Hour), // remove logs older than 30 days
+		logrotate.WithMaxSize(10),             // rotate when file size over 10 bytes
+		logrotate.WithMaxInterval(time.Hour),  // rotate hourly
 	)
 	if err != nil {
 		panic(err)
