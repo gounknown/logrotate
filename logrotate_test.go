@@ -42,7 +42,7 @@ func BenchmarkMaxBackups1000(b *testing.B) {
 
 func BenchmarkMaxInterval(b *testing.B) {
 	dir := filepath.Join(os.TempDir(), "logrotate", "BenchmarkMaxInterval")
-	os.RemoveAll(dir)
+	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
 		WithLinkName(filepath.Join(dir, "log")),
 		WithMaxSize(10),

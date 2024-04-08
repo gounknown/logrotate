@@ -1,0 +1,36 @@
+name: Testing
+
+# Trigger on pushes, PRs (excluding documentation changes), and nightly.
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: 0 0 * * * # daily at 00:00
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        go-version: [1.20.x, 1.21.x, 1.22.x]
+        os: [ubuntu-latest]
+        targetplatform: [x86, x64]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -v -timeout 30m -race ./... -coverprofile=coverage.txt -covermode=atomic
+
+      - name: Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: coverage.txt
+          flags: unittests
+          name: codecov-umbrella
