@@ -1,4 +1,8 @@
 # logrotate
+[![GoDoc](https://godoc.org/github.com/carlmjohnson/requests?status.svg)](https://pkg.go.dev/github.com/gounknown/logrotate) 
+[![Go Report Card](https://goreportcard.com/badge/github.com/carlmjohnson/requests)](https://goreportcard.com/report/github.com/gounknown/logrotate)
+[![Coverage Status](https://codecov.io/gh/gounknown/logrotate/branch/master/graph/badge.svg)](https://codecov.io/gh/gounknown/logrotate) 
+[![License](https://img.shields.io/github/license/gounknown/logrotate?style=flat-square)](https://opensource.org/licenses/MIT)
 
 A powerful log rotation package for Go.
 
