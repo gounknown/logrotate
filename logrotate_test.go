@@ -19,76 +19,61 @@ const baseTestDir = "_logs"
 // go test -bench ^BenchmarkMaxBackups1000$ -benchmem -benchtime=10s -cpuprofile=profile.out
 // go tool pprof -http=:8080 profile.out
 func BenchmarkMaxBackups1000(b *testing.B) {
-	dir := filepath.Join(os.TempDir(), "logrotate", "BenchmarkMaxBackups1000")
+	dir := filepath.Join(baseTestDir, "BenchmarkMaxBackups1000")
 	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
-		WithLinkName(filepath.Join(dir, "log")),
+		WithSymlink(filepath.Join(dir, "log")),
 		WithMaxSize(10),
 		// WithMaxAge(3*time.Second),
 		WithMaxBackups(1000),
 	)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(b, err, "New should succeed")
 	defer l.Close()
+
 	logline := []byte("Hello, World")
 	for i := 0; i < b.N; i++ {
 		n, err := l.Write(logline)
-		if err != nil {
-			panic(err)
-		}
-		if n != len(logline) {
-			panic("write length not matched")
-		}
+		require.NoError(b, err, "Write should succeed")
+		require.Equal(b, len(logline), n, "Write length should match")
 	}
 }
 
 func BenchmarkMaxInterval(b *testing.B) {
-	dir := filepath.Join(os.TempDir(), "logrotate", "BenchmarkMaxInterval")
+	dir := filepath.Join(baseTestDir, "BenchmarkMaxInterval")
 	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
-		WithLinkName(filepath.Join(dir, "log")),
+		WithSymlink(filepath.Join(dir, "log")),
 		WithMaxSize(10),
 		WithMaxInterval(time.Second),
 		// WithMaxAge(3*time.Second),
 		WithMaxBackups(10),
 	)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(b, err, "New should succeed")
 	defer l.Close()
+
 	logline := []byte("Hello, World")
 	for i := 0; i < b.N; i++ {
 		n, err := l.Write(logline)
-		if err != nil {
-			panic(err)
-		}
-		if n != len(logline) {
-			panic("write length not matched")
-		}
+		require.NoError(b, err, "Write should succeed")
+		require.Equal(b, len(logline), n, "Write length should match")
 	}
 }
 
 func BenchmarkNoRotate(b *testing.B) {
-	dir := filepath.Join(os.TempDir(), "logrotate", "BenchmarkNoRotate")
+	dir := filepath.Join(baseTestDir, "BenchmarkNoRotate")
 	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H"),
-		WithLinkName(filepath.Join(dir, "log")),
+		WithSymlink(filepath.Join(dir, "log")),
 		WithMaxSize(0),
 	)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(b, err, "New should succeed")
 	defer l.Close()
+
 	logline := []byte("Hello, World")
 	for i := 0; i < b.N; i++ {
 		n, err := l.Write(logline)
-		if err != nil {
-			panic(err)
-		}
-		if n != len(logline) {
-			panic("write length not matched")
-		}
+		require.NoError(b, err, "Write should succeed")
+		require.Equal(b, len(logline), n, "Write length should match")
 	}
 }
 
@@ -106,7 +91,7 @@ func TestLogRotate(t *testing.T) {
 			FixArgs: func(options []Option, dir string) []Option {
 				linkName := filepath.Join(dir, "log")
 
-				return append(options, WithLinkName(linkName))
+				return append(options, WithSymlink(linkName))
 			},
 			CheckExtras: func(t *testing.T, l *Logger, dir string) bool {
 				linkName := filepath.Join(dir, "log")
@@ -126,7 +111,7 @@ func TestLogRotate(t *testing.T) {
 			FixArgs: func(options []Option, dir string) []Option {
 				linkName := filepath.Join(dir, "nest1", "nest2", "log")
 
-				return append(options, WithLinkName(linkName))
+				return append(options, WithSymlink(linkName))
 			},
 			CheckExtras: func(t *testing.T, l *Logger, dir string) bool {
 				linkName := filepath.Join(dir, "nest1", "nest2", "log")
@@ -147,7 +132,7 @@ func TestLogRotate(t *testing.T) {
 		i := i   // avoid lint errors
 		tc := tc // avoid lint errors
 		t.Run(tc.Name, func(t *testing.T) {
-			dir := filepath.Join(os.TempDir(), fmt.Sprintf("logrotate-test%d", i))
+			dir := filepath.Join(baseTestDir, fmt.Sprintf("TestLogRotate-%d", i))
 			defer os.RemoveAll(dir)
 
 			// Change current time, so we can safely purge old logs
@@ -161,20 +146,13 @@ func TestLogRotate(t *testing.T) {
 			}
 
 			l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"), options...)
-			if !assert.NoError(t, err, `New should succeed`) {
-				return
-			}
+			require.NoError(t, err, `New should succeed`)
 			defer l.Close()
 
 			str := "Hello, World"
 			n, err := l.Write([]byte(str))
-			if !assert.NoError(t, err, "l.Write should succeed") {
-				return
-			}
-
-			if !assert.Len(t, str, n, "l.Write should succeed") {
-				return
-			}
+			require.NoError(t, err, "l.Write should succeed")
+			require.Len(t, str, n, "l.Write should succeed")
 
 			fn := l.currentFilename()
 			if fn == "" {
@@ -227,9 +205,7 @@ func TestLogRotate(t *testing.T) {
 			// fn was declared above, before mocking CurrentTime
 			// Old files should have been unlinked
 			_, err = os.Stat(fn)
-			if !assert.Error(t, err, "os.Stat should have failed") {
-				return
-			}
+			require.Error(t, err, "os.Stat should have failed")
 
 			if fn := tc.CheckExtras; fn != nil {
 				if !fn(t, l, dir) {
@@ -240,20 +216,8 @@ func TestLogRotate(t *testing.T) {
 	}
 }
 
-func CreateRotationTestFile(dir string, base time.Time, d time.Duration, n int) {
-	timestamp := base
-	for i := 0; i < n; i++ {
-		// %Y%m%d%H%M%S
-		suffix := timestamp.Format("20060102150405")
-		path := filepath.Join(dir, "log"+suffix)
-		os.WriteFile(path, []byte("rotation test file\n"), os.ModePerm)
-		os.Chtimes(path, timestamp, timestamp)
-		timestamp = timestamp.Add(d)
-	}
-}
-
 func TestLogMaxBackups(t *testing.T) {
-	dir := filepath.Join(os.TempDir(), "logrotate-MaxBackups-test")
+	dir := filepath.Join(baseTestDir, "TestLogMaxBackups")
 	defer os.RemoveAll(dir)
 
 	dummyTime := time.Now().Add(-7 * 24 * time.Hour)
@@ -267,9 +231,7 @@ func TestLogMaxBackups(t *testing.T) {
 			WithMaxAge(time.Duration(0)),
 			WithMaxBackups(0),
 		)
-		if !assert.NoError(t, err, `Both of MaxAge and MaxBackups is disabled`) {
-			return
-		}
+		require.NoError(t, err, `Both of MaxAge and MaxBackups is disabled`)
 		defer l.Close()
 	})
 
@@ -279,61 +241,56 @@ func TestLogMaxBackups(t *testing.T) {
 			WithClock(clock),
 			WithMaxBackups(1),
 		)
-		if !assert.NoError(t, err, `New should succeed`) {
-			return
-		}
+		require.NoError(t, err, `New should succeed`)
 		defer l.Close()
 
 		n, err := l.Write([]byte("dummy"))
-		if !assert.NoError(t, err, "l.Write should succeed") {
-			return
-		}
-		if !assert.Len(t, "dummy", n, "l.Write should succeed") {
-			return
-		}
+		require.NoError(t, err, "l.Write should succeed")
+		require.Len(t, "dummy", n, "l.Write should succeed")
+
 		time.Sleep(100 * time.Millisecond)
 		files, _ := filepath.Glob(filepath.Join(dir, "log*"))
-		if !assert.Equal(t, 1, len(files), "Only latest log is kept") {
-			return
-		}
+		require.Equal(t, 1, len(files), "Only latest log is kept")
 	})
 
+	createRotationTestFile := func(dir string, base time.Time, d time.Duration, n int) {
+		timestamp := base
+		for i := 0; i < n; i++ {
+			// %Y%m%d%H%M%S
+			suffix := timestamp.Format("20060102150405")
+			path := filepath.Join(dir, "log"+suffix)
+			os.WriteFile(path, []byte("rotation test file\n"), os.ModePerm)
+			os.Chtimes(path, timestamp, timestamp)
+			timestamp = timestamp.Add(d)
+		}
+	}
 	t.Run("Old log files are purged except 2 log files", func(t *testing.T) {
-		CreateRotationTestFile(dir, dummyTime, time.Hour, 5)
+		createRotationTestFile(dir, dummyTime, time.Hour, 5)
 		l, err := New(
 			filepath.Join(dir, "log%Y%m%d%H%M%S"),
 			WithClock(clock),
 			WithMaxAge(0),
 			WithMaxBackups(2),
 		)
-		if !assert.NoError(t, err, `New should succeed`) {
-			return
-		}
+		require.NoError(t, err, `New should succeed`)
 		defer l.Close()
 
 		n, err := l.Write([]byte("dummy"))
-		if !assert.NoError(t, err, "l.Write should succeed") {
-			return
-		}
-		if !assert.Len(t, "dummy", n, "l.Write should succeed") {
-			return
-		}
+		require.NoError(t, err, "l.Write should succeed")
+		require.Len(t, "dummy", n, "l.Write should succeed")
+
 		time.Sleep(100 * time.Millisecond)
 		files, _ := filepath.Glob(filepath.Join(dir, "log*"))
-		if !assert.Equal(t, 2, len(files), "One file is kept") {
-			return
-		}
+		require.Equal(t, 2, len(files), "One file is kept")
 	})
 }
 
 func TestLogSetOutput(t *testing.T) {
-	dir := filepath.Join(os.TempDir(), "logrotate-test")
+	dir := filepath.Join(baseTestDir, "TestLogSetOutput")
 	defer os.RemoveAll(dir)
 
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"))
-	if !assert.NoError(t, err, `New should succeed`) {
-		return
-	}
+	require.NoError(t, err, `New should succeed`)
 	defer l.Close()
 
 	log.SetOutput(l)
@@ -358,52 +315,36 @@ func TestLogSetOutput(t *testing.T) {
 }
 
 func TestRotationSuffixSeq(t *testing.T) {
-	dir := filepath.Join(os.TempDir(), "logrotate", "TestRotationSuffixSeq")
+	dir := filepath.Join(baseTestDir, "TestRotationSuffixSeq")
 	defer os.RemoveAll(dir)
 
 	t.Run("Rotate over unchanged pattern", func(t *testing.T) {
 		l, err := New(
 			filepath.Join(dir, "unchanged-pattern.log"),
 		)
-		if !assert.NoError(t, err, `New should succeed`) {
-			return
-		}
+		require.NoError(t, err, `New should succeed`)
 
 		seen := map[string]struct{}{}
 		for i := 0; i < 10; i++ {
 			l.Write([]byte("Hello, World!"))
-			if !assert.NoError(t, l.Rotate(), "l.Rotate should succeed") {
-				return
-			}
-
+			require.NoError(t, l.Rotate(), "l.Rotate should succeed")
 			// Because every call to Rotate should yield a new log file,
 			// and the previous files already exist, the filenames should share
 			// the same prefix and have a unique suffix
 			fn := filepath.Base(l.currentFilename())
-			if !assert.True(t, strings.HasPrefix(fn, "unchanged-pattern.log"), "prefix for all filenames should match") {
-				return
-			}
+			require.True(t, strings.HasPrefix(fn, "unchanged-pattern.log"), "prefix for all filenames should match")
 			l.Write([]byte("Hello, World!"))
 			suffix := strings.TrimPrefix(fn, "unchanged-pattern.log")
 			expectedSuffix := fmt.Sprintf(".%d", i+1)
-			if !assert.True(t, suffix == expectedSuffix, "expected suffix %s found %s", expectedSuffix, suffix) {
-				return
-			}
-			assert.FileExists(t, l.currentFilename(), "file does not exist %s", l.currentFilename())
+			require.True(t, suffix == expectedSuffix, "expected suffix %s found %s", expectedSuffix, suffix)
+			require.FileExists(t, l.currentFilename(), "file does not exist %s", l.currentFilename())
+
 			stat, err := os.Stat(l.currentFilename())
-			if err == nil {
-				if !assert.True(t, stat.Size() == 13, "file %s size is %d, expected 13", l.currentFilename(), stat.Size()) {
-					return
-				}
-			} else {
-				assert.Failf(t, "could not stat file %s", l.currentFilename())
+			require.NoError(t, err, "could not stat file %s", l.currentFilename())
+			require.True(t, stat.Size() == 13, "file %s size is %d, expected 13", l.currentFilename(), stat.Size())
 
-				return
-			}
-
-			if _, ok := seen[suffix]; !assert.False(t, ok, `filename suffix %s should be unique`, suffix) {
-				return
-			}
+			_, ok := seen[suffix]
+			require.False(t, ok, `filename suffix %s should be unique`, suffix)
 			seen[suffix] = struct{}{}
 		}
 		defer l.Close()
@@ -414,27 +355,19 @@ func TestRotationSuffixSeq(t *testing.T) {
 			pattern,
 			WithMaxInterval(time.Second),
 		)
-		if !assert.NoError(t, err, `New should succeed`) {
-			return
-		}
+		require.NoError(t, err, `New should succeed`)
+		defer l.Close()
 
 		l.Write([]byte("init")) // first write
 		for i := 0; i < 5; i++ {
 			time.Sleep(time.Second)
 			l.Write([]byte("Hello, World!"))
-			if !assert.True(t, strings.HasSuffix(l.currentFilename(), ".log"), "log name should end with .log") {
-				return
-			}
-			if !assert.NoError(t, l.Rotate(), "l.Rotate should succeed") {
-				return
-			}
-			// because every new Write should yield a new logfile,
+			require.True(t, strings.HasSuffix(l.currentFilename(), ".log"), "log name should end with .log")
+			require.NoError(t, l.Rotate(), "l.Rotate should succeed")
+			// because every new Write should yield a new log file,
 			// every rotate should create a filename ending with a .1
-			if !assert.True(t, strings.HasSuffix(l.currentFilename(), ".1"), "log name should end with .1") {
-				return
-			}
+			require.True(t, strings.HasSuffix(l.currentFilename(), ".1"), "log name should end with .1")
 		}
-		defer l.Close()
 	})
 }
 
@@ -445,7 +378,7 @@ func (f ClockFunc) Now() time.Time {
 }
 
 func TestTimeZone(t *testing.T) {
-	dir := filepath.Join(os.TempDir(), "logrotate", "TestTimeZone")
+	dir := filepath.Join(baseTestDir, "TestTimeZone")
 	defer os.RemoveAll(dir)
 
 	for _, locName := range []string{"Asia/Tokyo", "Pacific/Honolulu"} {
@@ -476,15 +409,11 @@ func TestTimeZone(t *testing.T) {
 					filepath.Join(dir, template),
 					WithClock(test.Clock), // we're not using WithLocation, but it's the same thing
 				)
-				if !assert.NoError(t, err, "New should succeed") {
-					return
-				}
+				require.NoError(t, err, "New should succeed")
 
 				t.Logf("expected %s", test.Expected)
 				l.Rotate()
-				if !assert.Equal(t, test.Expected, l.currentFilename(), "file names should match") {
-					return
-				}
+				require.Equal(t, test.Expected, l.currentFilename(), "file names should match")
 			})
 		}
 	}
@@ -495,7 +424,7 @@ func Test_CreateNewFileWhenRemovedOnWrite(t *testing.T) {
 	defer os.RemoveAll(dir)
 	l, err := New(
 		filepath.Join(dir, "app.%Y%m%d%H.log"),
-		WithLinkName(filepath.Join(dir, "app")),
+		WithSymlink(filepath.Join(dir, "app")),
 	)
 	require.NoError(t, err, "New should succeed")
 
@@ -508,5 +437,5 @@ func Test_CreateNewFileWhenRemovedOnWrite(t *testing.T) {
 	require.NoError(t, err, "Close should succeed")
 
 	files, _ := os.ReadDir(dir)
-	assert.Equal(t, 2, len(files), "should auto create new log files after removed")
+	require.Equal(t, 2, len(files), "should auto create new log files after removed")
 }

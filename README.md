@@ -30,7 +30,7 @@ func main() {
 func main() {
 	l, _ := logrotate.New(
 		"/path/to/log.%Y%m%d%H",
-		logrotate.WithLinkName("/path/to/log"), // symlink to current logfile
+		logrotate.WithSymlink("/path/to/log"),  // symlink to current logfile
 		logrotate.WithMaxAge(30*24*time.Hour),  // remove logs older than 30 days
 		logrotate.WithMaxInterval(time.Hour),   // rotate every hour
 	)
@@ -83,16 +83,16 @@ logrotate.New(
 )
 ```
 
-### LinkName (default: "")
+### Symlink (default: "")
 
-Path where a symlink for the actual log file is placed. This allows you to
+You can set a symlink for the current log file being used. This allows you to
 always check at the same location for current log file even if the logs were
 rotated.
 
 ```go
 logrotate.New(
     "/path/to/log.%Y%m%d",
-    logrotate.WithLinkName("/path/to/current"),
+    logrotate.WithSymlink("/path/to/current"),
 )
 ```
 
@@ -101,14 +101,14 @@ logrotate.New(
 $ tail -f /path/to/current
 ```
 
-Links that share the same parent directory with the main log path will get a
-special treatment: namely, linked paths will be *RELATIVE* to the main log file.
+The symlink that share the same parent directory with the main log path will get
+a special treatment: linked paths will be *RELATIVE* to the main log file.
 
-| Main log file name  | Link name           | Linked path           |
-| ------------------- | ------------------- | --------------------- |
-| /path/to/log.%Y%m%d | /path/to/log        | log.YYYYMMDD          |
-| /path/to/log.%Y%m%d | /path/to/nested/log | ../log.YYYYMMDD       |
-| /path/to/log.%Y%m%d | /foo/bar/baz/log    | /path/to/log.YYYYMMDD |
+| Main log file pattern | Symlink path        | Linked path           |
+| --------------------- | ------------------- | --------------------- |
+| /path/to/log.%Y%m%d   | /path/to/log        | log.YYYYMMDD          |
+| /path/to/log.%Y%m%d   | /path/to/nested/log | ../log.YYYYMMDD       |
+| /path/to/log.%Y%m%d   | /foo/bar/baz/log    | /path/to/log.YYYYMMDD |
 
 If not provided, no link will be written.
 

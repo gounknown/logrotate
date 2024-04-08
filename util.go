@@ -133,3 +133,40 @@ func (b byModTime) Swap(i, j int) {
 func (b byModTime) Len() int {
 	return len(b)
 }
+
+// link creates a symbolic link to the provided filename.
+//
+// How the symlink name is generated based on where the target location is.
+// If the location is directly underneath the filename's parent directory,
+// then we create a symlink with a relative path.
+func link(filename string, symlink string) error {
+	tmpLinkName := filename + ".symlink#"
+	linkDest := filename
+	linkDir := filepath.Dir(symlink)
+
+	baseDir := filepath.Dir(filename)
+	if strings.Contains(symlink, baseDir) {
+		tmp, err := filepath.Rel(linkDir, filename)
+		if err != nil {
+			return fmt.Errorf("failed to evaluate relative path from %#v to %#v: %v", linkDir, filename, err)
+		}
+		linkDest = tmp
+	}
+
+	if err := os.Symlink(linkDest, tmpLinkName); err != nil {
+		return fmt.Errorf("failed to create new symlink: %v", err)
+	}
+
+	// the directory where symlink should be created must exist
+	_, err := os.Stat(linkDir)
+	if err != nil { // Assume err != nil means the directory doesn't exist
+		if err := os.MkdirAll(linkDir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %v", linkDir, err)
+		}
+	}
+
+	if err := os.Rename(tmpLinkName, symlink); err != nil {
+		return fmt.Errorf("failed to rename new symlink %s -> %s: %v", tmpLinkName, symlink, err)
+	}
+	return nil
+}
