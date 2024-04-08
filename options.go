@@ -79,7 +79,7 @@ func WithMaxSize(s int) Option {
 // timestamp encoded in their filename. 0 means not to remove
 // old log files based on age.
 //
-// Default: 7 days
+// Default: 0
 func WithMaxAge(d time.Duration) Option {
 	return func(opts *Options) {
 		opts.maxAge = d

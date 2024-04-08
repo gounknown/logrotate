@@ -11,7 +11,10 @@ import (
 
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+const baseTestDir = "_logs"
 
 // go test -bench ^BenchmarkMaxBackups1000$ -benchmem -benchtime=10s -cpuprofile=profile.out
 // go tool pprof -http=:8080 profile.out
@@ -485,4 +488,25 @@ func TestTimeZone(t *testing.T) {
 			})
 		}
 	}
+}
+
+func Test_CreateNewFileWhenRemovedOnWrite(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Test_CreateNewFileWhenRemovedOnWrite")
+	defer os.RemoveAll(dir)
+	l, err := New(
+		filepath.Join(dir, "app.%Y%m%d%H.log"),
+		WithLinkName(filepath.Join(dir, "app")),
+	)
+	require.NoError(t, err, "New should succeed")
+
+	l.Write([]byte("before removed"))
+	time.Sleep(time.Second)
+	os.RemoveAll(dir)
+	l.Write([]byte("after removed"))
+
+	err = l.Close()
+	require.NoError(t, err, "Close should succeed")
+
+	files, _ := os.ReadDir(dir)
+	assert.Equal(t, 2, len(files), "should auto create new log files after removed")
 }
