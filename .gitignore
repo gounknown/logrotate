@@ -22,3 +22,4 @@ go.work
 
 _*
 *.log
+coverage.txt

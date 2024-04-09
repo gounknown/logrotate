@@ -30,11 +30,11 @@ func BenchmarkMaxBackups1000(b *testing.B) {
 	require.NoError(b, err, "New should succeed")
 	defer l.Close()
 
+	log.SetOutput(l)
+
 	logline := []byte("Hello, World")
 	for i := 0; i < b.N; i++ {
-		n, err := l.Write(logline)
-		require.NoError(b, err, "Write should succeed")
-		require.Equal(b, len(logline), n, "Write length should match")
+		log.Println(logline)
 	}
 }
 
@@ -51,11 +51,11 @@ func BenchmarkMaxInterval(b *testing.B) {
 	require.NoError(b, err, "New should succeed")
 	defer l.Close()
 
+	log.SetOutput(l)
+
 	logline := []byte("Hello, World")
 	for i := 0; i < b.N; i++ {
-		n, err := l.Write(logline)
-		require.NoError(b, err, "Write should succeed")
-		require.Equal(b, len(logline), n, "Write length should match")
+		log.Println(logline)
 	}
 }
 
