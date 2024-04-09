@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/lestrrat-go/strftime"
 )
@@ -34,9 +35,10 @@ type Logger struct {
 	currBaseFilename string       // base filename without suffix sequence
 	currSequence     uint         // filename suffix sequence
 
-	wg     sync.WaitGroup // counts active background goroutines
-	millCh chan struct{}  // 1-size notification chan for mill goroutine
-	quit   chan struct{}  // closed when writeLoop and millLoop should quit
+	wg      sync.WaitGroup // counts active background goroutines
+	writeCh chan []byte    // buffered chan for write goroutine
+	millCh  chan struct{}  // 1-size notification chan for mill goroutine
+	quit    chan struct{}  // closed when writeLoop and millLoop should quit
 }
 
 // New creates a new concurrent safe Logger object with the provided
@@ -72,8 +74,16 @@ func New(pattern string, options ...Option) (*Logger, error) {
 		maxIntervalSeconds: maxIntervalInSeconds,
 		tzOffsetSeconds:    int64(offset),
 		millCh:             make(chan struct{}, 1),
+		writeCh:            make(chan []byte, 1024),
 		quit:               make(chan struct{}),
 	}
+
+	// starting the write goroutine
+	l.wg.Add(1)
+	go func() {
+		l.wg.Done()
+		l.writeLoop()
+	}()
 
 	// starting the mill goroutine
 	l.wg.Add(1)
@@ -85,22 +95,64 @@ func New(pattern string, options ...Option) (*Logger, error) {
 	return l, nil
 }
 
-// Write implements io.Writer. It writes to the target file handle that is
-// currently being used.
+// Write implements io.Writer. It only writes to writeCh and then return, so it
+// is very fast and would not block unless writeCh is full. The writeLoop
+// goroutine will sink the writeCh to files asynchronously in background.
+//
+// NOTE: If you still call Write after Close called, nothing will sink to files.
+func (l *Logger) Write(b []byte) (n int, err error) {
+	// Should check whether the Logger was closed?
+	//
+	// NOTE: we must do value-copy and then write it to writeCh to avoid the
+	// data race problem, as the inputed byte slice "b" is usually reused by
+	// the caller.
+	//
+	// TODO: slice value-copy and GC cost is high, how to optimize? bufio?
+	copied := make([]byte, len(b))
+	copy(copied, b)
+	l.writeCh <- copied
+	return len(b), nil
+}
+
+// writeLoop runs in a goroutine to sink the writeCh until Close is called.
+func (l *Logger) writeLoop() {
+	for {
+		select {
+		case <-l.quit:
+			// How long to drain on l.writeCh
+			drainDu := 10 * time.Millisecond
+			if len(l.writeCh) > 100 {
+				// give more drain time
+				drainDu *= 10
+			}
+			timer := time.NewTimer(drainDu)
+			defer timer.Stop()
+			for {
+				select {
+				case <-timer.C:
+					return // quit
+				case b := <-l.writeCh:
+					_, _ = l.write(b)
+				}
+			}
+		case b := <-l.writeCh:
+			// what am I going to do, log this by tracef?
+			_, _ = l.write(b)
+		}
+	}
+}
+
+// write writes to the target file handle that is currently being used.
 //
 // If a write would cause the log file to be larger than MaxSize, or we have
 // reached a new rotation time (evaluated based on MaxInterval), the target
 // file would get automatically rotated, and old log files would also be purged
 // if necessary.
-func (l *Logger) Write(p []byte) (n int, err error) {
-	// Guard against concurrent writes
+func (l *Logger) write(b []byte) (n int, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.write(p)
-}
 
-func (l *Logger) write(p []byte) (n int, err error) {
-	writeLen := int64(len(p))
+	writeLen := int64(len(b))
 
 	// The os.Stat method cost is: 256 B/op, 2 allocs/op
 	_, err = os.Stat(l.currFilename)
@@ -124,7 +176,7 @@ func (l *Logger) write(p []byte) (n int, err error) {
 		}
 	}
 
-	n, err = l.file.Write(p)
+	n, err = l.file.Write(b)
 	if err != nil {
 		tracef(os.Stderr, "failed to write: %v, so try to open existing or new file", err)
 		if err = l.openExistingOrNew(writeLen); err != nil {
@@ -138,6 +190,7 @@ func (l *Logger) write(p []byte) (n int, err error) {
 
 // mill performs post-rotation compression and removal of stale log files.
 func (l *Logger) mill() {
+	// It's ok to skip if millCh is full.
 	select {
 	case l.millCh <- struct{}{}:
 	default:
@@ -145,18 +198,24 @@ func (l *Logger) mill() {
 }
 
 // millLoop runs in a goroutine to manage post-rotation compression and removal
-// of old log files.
+// of old log files until Close is called.
 func (l *Logger) millLoop() {
 	for {
 		select {
 		case <-l.quit:
-			if len(l.millCh) != 0 {
-				// what am I going to do, log this?
-				_ = l.millRunOnce()
+			// How long to drain on l.millCh
+			timer := time.NewTimer(10 * time.Millisecond)
+			defer timer.Stop()
+			for {
+				select {
+				case <-timer.C:
+					return // quit
+				case <-l.millCh:
+					_ = l.millRunOnce()
+				}
 			}
-			return
 		case <-l.millCh:
-			// what am I going to do, log this?
+			// what am I going to do, log this by tracef?
 			_ = l.millRunOnce()
 		}
 	}
@@ -348,13 +407,21 @@ func (l *Logger) evalCurrentFilename(writeLen int64, forceNewFile bool) string {
 	return filename
 }
 
-// Close implements io.Closer. It closes the current log file and
-// the mill goroutine running in background.
+// Close implements io.Closer. It closes the writeLoop and millLoop
+// goroutines and the current log file.
 func (l *Logger) Close() error {
+	close(l.quit) // tell writeLoop and millLoop to quit
+	l.wg.Wait()   // and wait until they have quitted
+
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.quit <- struct{}{} // close mill goroutine
-	l.wg.Wait()
+	// It's ok to not close writeCh and millCh explicitly, because we
+	// already closed the writeLoop and millLoop goroutines, so they will
+	// be garbage collected. Besides, if you still call Write after Close
+	// called, nothing will sink to file.
+	//
+	// close(l.writeCh)
+	// close(l.millCh)
 	return l.close()
 }
 
