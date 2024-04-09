@@ -19,7 +19,7 @@ func ExampleNew() {
 
 	log.Printf("Hello, World!") // 13 bytes
 	log.Printf("Hello, World!") // 13 bytes
-	time.Sleep(time.Second)     // ensure alerady sink to files
+	time.Sleep(time.Second)     // ensure already sink to files
 	l.Close()
 
 	files, _ := os.ReadDir(dir)
