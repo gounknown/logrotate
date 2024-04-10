@@ -45,37 +45,17 @@ type Logger struct {
 // filename pattern and options.
 func New(pattern string, options ...Option) (*Logger, error) {
 	globPattern := parseGlobPattern(pattern)
-
 	filenamePattern, err := strftime.New(pattern)
 	if err != nil {
 		return nil, fmt.Errorf("invalid strftime pattern: %v", err)
 	}
-
 	opts := parseOptions(options...)
-
-	if opts.maxAge < 0 {
-		return nil, fmt.Errorf("option MaxAge cannot be < 0")
-	}
-	maxIntervalInSeconds := int64(opts.maxInterval.Seconds())
-	if maxIntervalInSeconds < 0 {
-		return nil, fmt.Errorf("option MaxInterval in seconds cannot be < 0")
-	}
-
-	if opts.maxSize < 0 {
-		return nil, fmt.Errorf("option MaxSize cannot be < 0")
-	}
-
-	if opts.writeChSize < 0 {
-		return nil, fmt.Errorf("option WriteChSize cannot be < 0")
-	}
-
 	_, offset := opts.clock.Now().Zone()
-
 	l := &Logger{
 		opts:               opts,
 		pattern:            filenamePattern,
 		globPattern:        globPattern,
-		maxIntervalSeconds: maxIntervalInSeconds,
+		maxIntervalSeconds: int64(opts.maxInterval.Seconds()),
 		tzOffsetSeconds:    int64(offset),
 		millCh:             make(chan struct{}, 1),
 		quit:               make(chan struct{}),
@@ -101,7 +81,7 @@ func New(pattern string, options ...Option) (*Logger, error) {
 	return l, nil
 }
 
-// Write implements io.Writer. If writeChSize is <= 0, then it writes to the
+// Write implements io.Writer. If writeChSize <= 0, then it writes to the
 // current file directly. Otherwise, it just writes to writeCh, so there is no
 // blocking disk I/O operations and would not block unless writeCh is full.
 // In the meantime, the writeLoop goroutine will sink the writeCh to files
@@ -254,7 +234,7 @@ func (l *Logger) millRunOnce() error {
 		}
 	}
 
-	if l.opts.maxBackups == 0 && l.opts.maxAge == 0 {
+	if l.opts.maxBackups <= 0 && l.opts.maxAge <= 0 {
 		return nil
 	}
 

@@ -143,7 +143,7 @@ rotated. It defaults to 100 MB.
 ### MaxAge (default: 0)
 
 Retain old log files based on the timestamp encoded in their filename.
-It defaults to 0, so will not remove old log files based on age.
+If MaxAge <= 0, that means not remove old log files based on age.
 
 Note: Remember to use `time.Duration` values.
 
@@ -157,9 +157,8 @@ Note: Remember to use `time.Duration` values.
 
 ### MaxBackups (default: 0)
 
-The maximum number of old log files to retain. The default
-is to retain all old log files (though MaxAge may still cause them to get
-deleted.)
+The maximum number of old log files to retain. If MaxBackups <= 0, that means 
+retain all old log files (though MaxAge may still cause them to be removed.)
 
 ```go
   // Remove logs except latest 7 files
@@ -171,8 +170,8 @@ deleted.)
 
 ### BufferedWrite (default: 0)
 
-If you want use buffered write, then sets the channel size to be > 0. It
-defaults to 0, so will not use buffered write.
+If you want use buffered write, then sets the channel size to be > 0.
+If BufferedWrite <= 0, that means do not use buffered write.
 
 ```go
   // Use buffered write and set channel size to 100
