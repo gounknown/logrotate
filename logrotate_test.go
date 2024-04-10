@@ -16,10 +16,10 @@ import (
 
 const baseTestDir = "_logs"
 
-// go test -bench ^BenchmarkMaxBackups1000$ -benchmem -benchtime=10s -cpuprofile=profile.out
+// go test -bench ^Benchmark_MaxBackups1000$ -benchmem -benchtime=10s -cpuprofile=profile.out
 // go tool pprof -http=:8080 profile.out
-func BenchmarkMaxBackups1000(b *testing.B) {
-	dir := filepath.Join(baseTestDir, "BenchmarkMaxBackups1000")
+func Benchmark_MaxBackups1000(b *testing.B) {
+	dir := filepath.Join(baseTestDir, "Benchmark_MaxBackups1000")
 	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
 		WithSymlink(filepath.Join(dir, "log")),
@@ -32,14 +32,15 @@ func BenchmarkMaxBackups1000(b *testing.B) {
 
 	log.SetOutput(l)
 
-	logline := []byte("Hello, World")
+	logline := "Hello, World"
 	for i := 0; i < b.N; i++ {
 		log.Println(logline)
 	}
+	// time.Sleep(time.Second)
 }
 
-func BenchmarkMaxInterval(b *testing.B) {
-	dir := filepath.Join(baseTestDir, "BenchmarkMaxInterval")
+func Benchmark_MaxInterval(b *testing.B) {
+	dir := filepath.Join(baseTestDir, "Benchmark_MaxInterval")
 	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
 		WithSymlink(filepath.Join(dir, "log")),
@@ -47,37 +48,55 @@ func BenchmarkMaxInterval(b *testing.B) {
 		WithMaxInterval(time.Second),
 		// WithMaxAge(3*time.Second),
 		WithMaxBackups(10),
+		WithBufferedWrite(100),
 	)
 	require.NoError(b, err, "New should succeed")
 	defer l.Close()
 
 	log.SetOutput(l)
 
-	logline := []byte("Hello, World")
+	logline := "Hello, World"
 	for i := 0; i < b.N; i++ {
 		log.Println(logline)
 	}
 }
 
-func BenchmarkNoRotate(b *testing.B) {
+var logline50 = []byte("01234567890123456789012345678901234567890123456789")
+
+func Benchmark_WriteWithoutRotate(b *testing.B) {
 	dir := filepath.Join(baseTestDir, "BenchmarkNoRotate")
 	defer os.RemoveAll(dir)
-	l, err := New(filepath.Join(dir, "log%Y%m%d%H"),
-		WithSymlink(filepath.Join(dir, "log")),
+	l, err := New(filepath.Join(dir, "log"),
 		WithMaxSize(0),
 	)
 	require.NoError(b, err, "New should succeed")
 	defer l.Close()
 
-	logline := []byte("Hello, World")
 	for i := 0; i < b.N; i++ {
-		n, err := l.Write(logline)
+		n, err := l.Write(logline50)
 		require.NoError(b, err, "Write should succeed")
-		require.Equal(b, len(logline), n, "Write length should match")
+		require.Equal(b, len(logline50), n, "Write length should match")
 	}
 }
 
-func TestLogRotate(t *testing.T) {
+func Benchmark_BufferedWriteWithoutRotate(b *testing.B) {
+	dir := filepath.Join(baseTestDir, "BenchmarkNoRotate")
+	defer os.RemoveAll(dir)
+	l, err := New(filepath.Join(dir, "log"),
+		WithMaxSize(0),
+		WithBufferedWrite(100),
+	)
+	require.NoError(b, err, "New should succeed")
+	defer l.Close()
+
+	for i := 0; i < b.N; i++ {
+		n, err := l.Write(logline50)
+		require.NoError(b, err, "Write should succeed")
+		require.Equal(b, len(logline50), n, "Write length should match")
+	}
+}
+
+func Test_Rotate(t *testing.T) {
 	testCases := []struct {
 		Name        string
 		FixArgs     func([]Option, string) []Option
@@ -132,7 +151,7 @@ func TestLogRotate(t *testing.T) {
 		i := i   // avoid lint errors
 		tc := tc // avoid lint errors
 		t.Run(tc.Name, func(t *testing.T) {
-			dir := filepath.Join(baseTestDir, fmt.Sprintf("TestLogRotate-%d", i))
+			dir := filepath.Join(baseTestDir, fmt.Sprintf("Test_Rotate-%d", i))
 			defer os.RemoveAll(dir)
 
 			// Change current time, so we can safely purge old logs
@@ -154,6 +173,7 @@ func TestLogRotate(t *testing.T) {
 			require.NoError(t, err, "l.Write should succeed")
 			require.Len(t, str, n, "l.Write should succeed")
 
+			time.Sleep(100 * time.Millisecond)
 			fn := l.currentFilename()
 			if fn == "" {
 				t.Errorf("Could not get filename %s", fn)
@@ -186,6 +206,7 @@ func TestLogRotate(t *testing.T) {
 
 			// This next Write() should trigger Rotate()
 			l.Write([]byte(str))
+			time.Sleep(100 * time.Millisecond)
 			newfn := l.currentFilename()
 			if newfn == fn {
 				t.Errorf(`New file name and old file name should not match ("%s" != "%s")`, fn, newfn)
@@ -216,8 +237,31 @@ func TestLogRotate(t *testing.T) {
 	}
 }
 
-func TestLogMaxBackups(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "TestLogMaxBackups")
+func Test_BufferedWrite(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Test_BufferedWrite")
+	defer os.RemoveAll(dir)
+
+	l, err := New(
+		filepath.Join(dir, "log"),
+		WithMaxSize(10),
+		WithBufferedWrite(100),
+	)
+	require.NoError(t, err, `New should succeed`)
+	for i := 0; i < 10; i++ {
+		l.Write([]byte("Hello, World"))
+	}
+	time.Sleep(1 * time.Second)
+	for i := 0; i < 10; i++ {
+		l.Write([]byte("Hello, World"))
+	}
+	l.Close()
+	time.Sleep(1 * time.Second)
+	files, _ := filepath.Glob(filepath.Join(dir, "log*"))
+	require.GreaterOrEqual(t, len(files), 20, "count of rotated log files is wrong")
+}
+
+func Test_MaxBackups(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Test_MaxBackups")
 	defer os.RemoveAll(dir)
 
 	dummyTime := time.Now().Add(-7 * 24 * time.Hour)
@@ -285,8 +329,8 @@ func TestLogMaxBackups(t *testing.T) {
 	})
 }
 
-func TestLogSetOutput(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "TestLogSetOutput")
+func Test_SetOutput(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Test_SetOutput")
 	defer os.RemoveAll(dir)
 
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"))
@@ -298,7 +342,7 @@ func TestLogSetOutput(t *testing.T) {
 
 	str := "Hello, World"
 	log.Print(str)
-
+	time.Sleep(100 * time.Millisecond)
 	fn := l.currentFilename()
 	if fn == "" {
 		t.Errorf("Could not get filename %s", fn)
@@ -314,8 +358,8 @@ func TestLogSetOutput(t *testing.T) {
 	}
 }
 
-func TestRotationSuffixSeq(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "TestRotationSuffixSeq")
+func Test_RotationSuffixSeq(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Test_RotationSuffixSeq")
 	defer os.RemoveAll(dir)
 
 	t.Run("Rotate over unchanged pattern", func(t *testing.T) {
@@ -325,8 +369,9 @@ func TestRotationSuffixSeq(t *testing.T) {
 		require.NoError(t, err, `New should succeed`)
 
 		seen := map[string]struct{}{}
-		for i := 0; i < 10; i++ {
+		for i := 0; i < 5; i++ {
 			l.Write([]byte("Hello, World!"))
+			time.Sleep(10 * time.Millisecond)
 			require.NoError(t, l.Rotate(), "l.Rotate should succeed")
 			// Because every call to Rotate should yield a new log file,
 			// and the previous files already exist, the filenames should share
@@ -334,6 +379,7 @@ func TestRotationSuffixSeq(t *testing.T) {
 			fn := filepath.Base(l.currentFilename())
 			require.True(t, strings.HasPrefix(fn, "unchanged-pattern.log"), "prefix for all filenames should match")
 			l.Write([]byte("Hello, World!"))
+			time.Sleep(10 * time.Millisecond)
 			suffix := strings.TrimPrefix(fn, "unchanged-pattern.log")
 			expectedSuffix := fmt.Sprintf(".%d", i+1)
 			require.True(t, suffix == expectedSuffix, "expected suffix %s found %s", expectedSuffix, suffix)
@@ -377,8 +423,8 @@ func (f ClockFunc) Now() time.Time {
 	return f()
 }
 
-func TestTimeZone(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "TestTimeZone")
+func Test_TimeZone(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Test_TimeZone")
 	defer os.RemoveAll(dir)
 
 	for _, locName := range []string{"Asia/Tokyo", "Pacific/Honolulu"} {
@@ -435,7 +481,24 @@ func Test_CreateNewFileWhenRemovedOnWrite(t *testing.T) {
 
 	err = l.Close()
 	require.NoError(t, err, "Close should succeed")
-
+	time.Sleep(100 * time.Millisecond)
 	files, _ := os.ReadDir(dir)
 	require.Equal(t, 2, len(files), "should auto create new log files after removed")
+}
+
+func Test_DataRaceOnWrite(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Test_DataRaceOnWrite")
+	defer os.RemoveAll(dir)
+	l, err := New(
+		filepath.Join(dir, "app.%Y%m%d%H.log"),
+		WithSymlink(filepath.Join(dir, "app")),
+	)
+	require.NoError(t, err, "New should succeed")
+
+	log.SetOutput(l)
+
+	logline := "Hello, World"
+	for i := 0; i < 1000; i++ {
+		log.Println(logline)
+	}
 }

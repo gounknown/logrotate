@@ -6,12 +6,13 @@ import (
 
 // Options is supplied as the optional arguments for New.
 type Options struct {
-	clock       Clock
-	symlink     string
-	maxInterval time.Duration
-	maxSize     int
-	maxAge      time.Duration
-	maxBackups  int
+	clock       Clock         // used to determine the current time
+	symlink     string        // linked to the current file
+	maxInterval time.Duration // max interval between file rotation
+	maxSize     int           // max size of log file before rotation
+	maxAge      time.Duration // max age to retain old log files
+	maxBackups  int           // max number of old log files to retain
+	writeChSize int           // buffered write channel size
 }
 
 // Option is the functional option type.
@@ -25,6 +26,7 @@ func newDefaultOptions() *Options {
 		maxSize:     100 * 1024 * 1024, // 100M
 		maxAge:      0,                 // retain all old log files
 		maxBackups:  0,                 // retain all old log files
+		writeChSize: 0,                 // do not use buffered write.
 	}
 }
 
@@ -66,9 +68,10 @@ func WithMaxInterval(d time.Duration) Option {
 }
 
 // WithMaxSize sets the maximum size of log file before it gets
-// rotated. 0 means that do not rotate log file based on size.
+// rotated. If MaxSize <= 0, that means not rotate log file based
+// on size.
 //
-// Default: 100 megabytes
+// Default: 100 MB
 func WithMaxSize(s int) Option {
 	return func(opts *Options) {
 		opts.maxSize = s
@@ -76,8 +79,8 @@ func WithMaxSize(s int) Option {
 }
 
 // WithMaxAge sets the max age to retain old log files based on the
-// timestamp encoded in their filename. 0 means not to remove
-// old log files based on age.
+// timestamp encoded in their filename. If MaxAge <= 0, that means
+// not remove old log files based on age.
 //
 // Default: 0
 func WithMaxAge(d time.Duration) Option {
@@ -87,12 +90,22 @@ func WithMaxAge(d time.Duration) Option {
 }
 
 // WithMaxBackups sets the maximum number of old log files to retain.
-// 0 means that retain all old log files (though MaxAge may still cause
-// them to get deleted.)
+// If MaxBackups <= 0, that means retain all old log files (though
+// MaxAge may still cause them to be removed.)
 //
 // Default: 0
 func WithMaxBackups(n int) Option {
 	return func(opts *Options) {
 		opts.maxBackups = n
+	}
+}
+
+// WithBufferedWrite sets the buffered write channel size.
+// If BufferedWrite <= 0, that means do not use buffered write.
+//
+// Default: 0
+func WithBufferedWrite(size int) Option {
+	return func(opts *Options) {
+		opts.writeChSize = size
 	}
 }

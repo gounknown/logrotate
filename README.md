@@ -115,9 +115,9 @@ If not provided, no link will be written.
 ### MaxInterval (default: 24 hours)
 
 Interval between file rotation. By default logs are rotated every 24 hours.
-In particular, the minimal interval unit is in time.Second level.
+In particular, the minimal interval unit is in `time.Second` level.
 
-Note: Remember to use time.Duration values.
+Note: Remember to use `time.Duration` values.
 
 ```go
   // Rotate every hour
@@ -127,10 +127,10 @@ Note: Remember to use time.Duration values.
   )
 ```
 
-### MaxSize (default: 100 megabytes)
+### MaxSize (default: 100 MB)
 
-MaxSize is the maximum size in megabytes of the log file before it gets
-rotated. It defaults to 100 megabytes.
+MaxSize is the maximum size in MB (megabytes) of the log file before it gets
+rotated. It defaults to 100 MB.
 
 ```go
   // Rotate every 10 MB
@@ -143,7 +143,7 @@ rotated. It defaults to 100 megabytes.
 ### MaxAge (default: 0)
 
 Retain old log files based on the timestamp encoded in their filename.
-The default is not to remove old log files based on age.
+If MaxAge <= 0, that means not remove old log files based on age.
 
 Note: Remember to use `time.Duration` values.
 
@@ -157,14 +157,26 @@ Note: Remember to use `time.Duration` values.
 
 ### MaxBackups (default: 0)
 
-The maximum number of old log files to retain. The default
-is to retain all old log files (though MaxAge may still cause them to get
-deleted.)
+The maximum number of old log files to retain. If MaxBackups <= 0, that means 
+retain all old log files (though MaxAge may still cause them to be removed.)
 
 ```go
   // Remove logs except latest 7 files
   logrotate.New(
     "/path/to/log.%Y%m%d",
     logrotate.WithMaxBackups(7),
+  )
+```
+
+### BufferedWrite (default: 0)
+
+If you want use buffered write, then sets the channel size to be > 0.
+If BufferedWrite <= 0, that means do not use buffered write.
+
+```go
+  // Use buffered write and set channel size to 100
+  logrotate.New(
+    "/path/to/log.%Y%m%d",
+    logrotate.WithBufferedWrite(100),
   )
 ```
