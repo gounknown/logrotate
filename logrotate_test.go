@@ -408,9 +408,10 @@ func Test_RotationSuffixSeq(t *testing.T) {
 		for i := 0; i < 5; i++ {
 			time.Sleep(time.Second)
 			l.Write([]byte("Hello, World!"))
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond)
 			require.True(t, strings.HasSuffix(l.currentFilename(), ".log"), "log name should end with .log")
 			require.NoError(t, l.Rotate(), "l.Rotate should succeed")
+			time.Sleep(20 * time.Millisecond)
 			// because every new Write should yield a new log file,
 			// every rotate should create a filename ending with a .1
 			require.True(t, strings.HasSuffix(l.currentFilename(), ".1"), "log name should end with .1")
