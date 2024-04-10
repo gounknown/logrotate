@@ -3,7 +3,6 @@ name: Testing
 # Trigger on pushes, PRs (excluding documentation changes), and nightly.
 on:
   push:
-  pull_request:
   schedule:
     - cron: 0 0 * * * # daily at 00:00
 
