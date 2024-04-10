@@ -32,7 +32,7 @@ func BenchmarkMaxBackups1000(b *testing.B) {
 
 	log.SetOutput(l)
 
-	logline := []byte("Hello, World")
+	logline := "Hello, World"
 	for i := 0; i < b.N; i++ {
 		log.Println(logline)
 	}
@@ -48,36 +48,52 @@ func BenchmarkMaxInterval(b *testing.B) {
 		WithMaxInterval(time.Second),
 		// WithMaxAge(3*time.Second),
 		WithMaxBackups(10),
+		WithBufferedWrite(100),
 	)
 	require.NoError(b, err, "New should succeed")
 	defer l.Close()
 
 	log.SetOutput(l)
 
-	logline := []byte("Hello, World")
+	logline := "Hello, World"
 	for i := 0; i < b.N; i++ {
 		log.Println(logline)
 	}
-	// time.Sleep(time.Second)
 }
 
-func BenchmarkNoRotate(b *testing.B) {
+var logline50 = []byte("01234567890123456789012345678901234567890123456789")
+
+func Benchmark_WriteWithoutRotate(b *testing.B) {
 	dir := filepath.Join(baseTestDir, "BenchmarkNoRotate")
 	defer os.RemoveAll(dir)
-	l, err := New(filepath.Join(dir, "log%Y%m%d%H"),
-		WithSymlink(filepath.Join(dir, "log")),
+	l, err := New(filepath.Join(dir, "log"),
 		WithMaxSize(0),
 	)
 	require.NoError(b, err, "New should succeed")
 	defer l.Close()
 
-	logline := []byte("Hello, World")
 	for i := 0; i < b.N; i++ {
-		n, err := l.Write(logline)
+		n, err := l.Write(logline50)
 		require.NoError(b, err, "Write should succeed")
-		require.Equal(b, len(logline), n, "Write length should match")
+		require.Equal(b, len(logline50), n, "Write length should match")
 	}
-	// time.Sleep(time.Second)
+}
+
+func Benchmark_BufferedWriteWithoutRotate(b *testing.B) {
+	dir := filepath.Join(baseTestDir, "BenchmarkNoRotate")
+	defer os.RemoveAll(dir)
+	l, err := New(filepath.Join(dir, "log"),
+		WithMaxSize(0),
+		WithBufferedWrite(100),
+	)
+	require.NoError(b, err, "New should succeed")
+	defer l.Close()
+
+	for i := 0; i < b.N; i++ {
+		n, err := l.Write(logline50)
+		require.NoError(b, err, "Write should succeed")
+		require.Equal(b, len(logline50), n, "Write length should match")
+	}
 }
 
 func TestLogRotate(t *testing.T) {

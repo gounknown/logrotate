@@ -6,12 +6,13 @@ import (
 
 // Options is supplied as the optional arguments for New.
 type Options struct {
-	clock       Clock
-	symlink     string
-	maxInterval time.Duration
-	maxSize     int
-	maxAge      time.Duration
-	maxBackups  int
+	clock       Clock         // used to determine the current time
+	symlink     string        // linked to the current file
+	maxInterval time.Duration // maximum interval between file rotation
+	maxSize     int           // maximum size of log file before rotation
+	maxAge      time.Duration // max age to retain old log files
+	maxBackups  int           // maximum number to retain old log files
+	writeChSize int           // buffered write channel size
 }
 
 // Option is the functional option type.
@@ -25,6 +26,7 @@ func newDefaultOptions() *Options {
 		maxSize:     100 * 1024 * 1024, // 100M
 		maxAge:      0,                 // retain all old log files
 		maxBackups:  0,                 // retain all old log files
+		writeChSize: 0,                 // do not use buffered write.
 	}
 }
 
@@ -68,7 +70,7 @@ func WithMaxInterval(d time.Duration) Option {
 // WithMaxSize sets the maximum size of log file before it gets
 // rotated. 0 means that do not rotate log file based on size.
 //
-// Default: 100 megabytes
+// Default: 100 MB
 func WithMaxSize(s int) Option {
 	return func(opts *Options) {
 		opts.maxSize = s
@@ -94,5 +96,15 @@ func WithMaxAge(d time.Duration) Option {
 func WithMaxBackups(n int) Option {
 	return func(opts *Options) {
 		opts.maxBackups = n
+	}
+}
+
+// WithBufferedWrite sets the buffered write channel size. Size 0 means do not
+// use buffered write.
+//
+// Default: 0
+func WithBufferedWrite(size int) Option {
+	return func(opts *Options) {
+		opts.writeChSize = size
 	}
 }

@@ -65,6 +65,10 @@ func New(pattern string, options ...Option) (*Logger, error) {
 		return nil, fmt.Errorf("option MaxSize cannot be < 0")
 	}
 
+	if opts.writeChSize < 0 {
+		return nil, fmt.Errorf("option WriteChSize cannot be < 0")
+	}
+
 	_, offset := opts.clock.Now().Zone()
 
 	l := &Logger{
@@ -74,16 +78,18 @@ func New(pattern string, options ...Option) (*Logger, error) {
 		maxIntervalSeconds: maxIntervalInSeconds,
 		tzOffsetSeconds:    int64(offset),
 		millCh:             make(chan struct{}, 1),
-		writeCh:            make(chan []byte, 1024),
 		quit:               make(chan struct{}),
 	}
 
-	// starting the write goroutine
-	l.wg.Add(1)
-	go func() {
-		l.wg.Done()
-		l.writeLoop()
-	}()
+	if opts.writeChSize > 0 {
+		l.writeCh = make(chan []byte, opts.writeChSize)
+		// starting the write goroutine
+		l.wg.Add(1)
+		go func() {
+			l.wg.Done()
+			l.writeLoop()
+		}()
+	}
 
 	// starting the mill goroutine
 	l.wg.Add(1)
@@ -95,12 +101,19 @@ func New(pattern string, options ...Option) (*Logger, error) {
 	return l, nil
 }
 
-// Write implements io.Writer. It only writes to writeCh and then return, so it
-// is very fast and would not block unless writeCh is full. The writeLoop
-// goroutine will sink the writeCh to files asynchronously in background.
+// Write implements io.Writer. If writeChSize is <= 0, then it writes to the
+// current file directly. Otherwise, it just writes to writeCh, so there is no
+// blocking disk I/O operations and would not block unless writeCh is full.
+// In the meantime, the writeLoop goroutine will sink the writeCh to files
+// asynchronously in background.
 //
-// NOTE: If you still call Write after Close called, nothing will sink to files.
+// NOTE: It's an undefined behavior if you still call Write after Close called.
+// Maybe it would sink to files, maybe not, but it won't panic.
 func (l *Logger) Write(b []byte) (n int, err error) {
+	if l.opts.writeChSize <= 0 {
+		return l.write(b)
+	}
+
 	// Should check whether the Logger was closed?
 	//
 	// NOTE: we must do value-copy and then write it to writeCh to avoid the
@@ -112,34 +125,6 @@ func (l *Logger) Write(b []byte) (n int, err error) {
 	copy(copied, b)
 	l.writeCh <- copied
 	return len(b), nil
-}
-
-// writeLoop runs in a goroutine to sink the writeCh until Close is called.
-func (l *Logger) writeLoop() {
-	for {
-		select {
-		case <-l.quit:
-			// How long to drain on l.writeCh
-			drainDu := 10 * time.Millisecond
-			if len(l.writeCh) > 100 {
-				// give more drain time
-				drainDu *= 10
-			}
-			timer := time.NewTimer(drainDu)
-			defer timer.Stop()
-			for {
-				select {
-				case <-timer.C:
-					return // quit
-				case b := <-l.writeCh:
-					_, _ = l.write(b)
-				}
-			}
-		case b := <-l.writeCh:
-			// what am I going to do, log this by tracef?
-			_, _ = l.write(b)
-		}
-	}
 }
 
 // write writes to the target file handle that is currently being used.
@@ -186,6 +171,34 @@ func (l *Logger) write(b []byte) (n int, err error) {
 	l.size += int64(n)
 
 	return n, err
+}
+
+// writeLoop runs in a goroutine to sink the writeCh until Close is called.
+func (l *Logger) writeLoop() {
+	for {
+		select {
+		case <-l.quit:
+			// How long to drain on l.writeCh
+			drainDu := 10 * time.Millisecond
+			if len(l.writeCh) > 100 {
+				// give more drain time
+				drainDu *= 10
+			}
+			timer := time.NewTimer(drainDu)
+			defer timer.Stop()
+			for {
+				select {
+				case <-timer.C:
+					return // quit
+				case b := <-l.writeCh:
+					_, _ = l.write(b)
+				}
+			}
+		case b := <-l.writeCh:
+			// what am I going to do, log this by tracef?
+			_, _ = l.write(b)
+		}
+	}
 }
 
 // mill performs post-rotation compression and removal of stale log files.
