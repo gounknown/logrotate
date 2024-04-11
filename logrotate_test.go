@@ -237,6 +237,20 @@ func Test_Rotate(t *testing.T) {
 	}
 }
 
+func Test_MaxInterval0(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Benchmark_MaxInterval0")
+	defer os.RemoveAll(dir)
+	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
+		WithSymlink(filepath.Join(dir, "log")),
+		WithMaxSize(10),
+		WithMaxInterval(0),
+	)
+	require.NoError(t, err, `New should succeed`)
+	for i := 0; i < 10; i++ {
+		l.Write([]byte("Hello, World"))
+	}
+}
+
 func Test_BufferedWrite(t *testing.T) {
 	dir := filepath.Join(baseTestDir, "Test_BufferedWrite")
 	defer os.RemoveAll(dir)

@@ -354,7 +354,14 @@ func (l *Logger) openNew(filename string) error {
 func (l *Logger) evalCurrentFilename(writeLen int64, forceNewFile bool) string {
 	baseFilename := l.currBaseFilename
 	if l.currBaseFilename == "" {
-		l.currRotationTime = evalCurrRotationTime(l.opts.clock, l.tzOffsetSeconds, l.maxIntervalSeconds)
+		// init base filename if l.currBaseFilename not set
+		if l.maxIntervalSeconds > 0 {
+			l.currRotationTime = evalCurrRotationTime(l.opts.clock, l.tzOffsetSeconds, l.maxIntervalSeconds)
+		} else if l.currRotationTime == 0 {
+			// no rotation based on MaxInterval, just set currRotationTime
+			// to now only once if not set.
+			l.currRotationTime = l.opts.clock.Now().Unix()
+		}
 		baseFilename = genBaseFilename(l.pattern, l.opts.clock, l.currRotationTime)
 	} else if l.maxIntervalSeconds > 0 {
 		rotationTime := evalCurrRotationTime(l.opts.clock, l.tzOffsetSeconds, l.maxIntervalSeconds)
