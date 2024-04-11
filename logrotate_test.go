@@ -39,8 +39,8 @@ func Benchmark_MaxBackups1000(b *testing.B) {
 	// time.Sleep(time.Second)
 }
 
-func Benchmark_MaxInterval(b *testing.B) {
-	dir := filepath.Join(baseTestDir, "Benchmark_MaxInterval")
+func Benchmark_MaxInterval1Second(b *testing.B) {
+	dir := filepath.Join(baseTestDir, "Benchmark_MaxInterval1Second")
 	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
 		WithSymlink(filepath.Join(dir, "log")),
@@ -49,6 +49,26 @@ func Benchmark_MaxInterval(b *testing.B) {
 		// WithMaxAge(3*time.Second),
 		WithMaxBackups(10),
 		WithBufferedWrite(100),
+	)
+	require.NoError(b, err, "New should succeed")
+	defer l.Close()
+
+	log.SetOutput(l)
+
+	logline := "Hello, World"
+	for i := 0; i < b.N; i++ {
+		log.Println(logline)
+	}
+}
+
+func Benchmark_MaxInterval0(b *testing.B) {
+	dir := filepath.Join(baseTestDir, "Benchmark_MaxInterval0")
+	defer os.RemoveAll(dir)
+	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
+		WithSymlink(filepath.Join(dir, "log")),
+		WithMaxSize(10),
+		WithMaxInterval(0),
+		WithMaxBackups(10),
 	)
 	require.NoError(b, err, "New should succeed")
 	defer l.Close()
