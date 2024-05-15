@@ -78,12 +78,15 @@ var patternConversionRegexps = []*regexp.Regexp{
 	regexp.MustCompile(`\*+`),         // one or multiple *
 }
 
+// log filename with sequence suffix such as "foo.1", "foo.2", "foo.3", etc.
+const suffixGlob = "*"
+
 func parseGlobPattern(pattern string) string {
 	globPattern := pattern
 	for _, re := range patternConversionRegexps {
 		globPattern = re.ReplaceAllString(globPattern, "*")
 	}
-	return globPattern
+	return globPattern + suffixGlob
 }
 
 // tracef formats according to a format specifier and writes to w

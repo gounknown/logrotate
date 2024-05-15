@@ -15,10 +15,9 @@ A powerful log rotation package for Go.
 ```go
 func main() {
     // logrotate is safe for concurrent use.
-	l, _ := logrotate.New("/path/to/log.%Y%m%d")
-	log.SetOutput(l)
-
-	log.Printf("Hello, World!")
+    l, _ := logrotate.New("/path/to/log.%Y%m%d")
+    log.SetOutput(l)
+    log.Printf("Hello, World!")
 }
 ```
 
@@ -28,21 +27,20 @@ func main() {
 
 ```go
 func main() {
-	l, _ := logrotate.New(
-		"/path/to/log.%Y%m%d%H",
-		logrotate.WithSymlink("/path/to/log"),  // symlink to current logfile
-		logrotate.WithMaxAge(30*24*time.Hour),  // remove logs older than 30 days
-		logrotate.WithMaxInterval(time.Hour),   // rotate every hour
-	)
-
-	w := zapcore.AddSync(l)
-	core := zapcore.NewCore(
-		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
-		w,
-		zap.InfoLevel,
-	)
-	logger := zap.New(core)
-	logger.Info("Hello, World!")
+    l, _ := logrotate.New(
+        "/path/to/log.%Y%m%d%H",
+        logrotate.WithSymlink("/path/to/log"),  // symlink to current logfile
+        logrotate.WithMaxAge(30*24*time.Hour),  // remove logs older than 30 days
+        logrotate.WithMaxInterval(time.Hour),   // rotate every hour
+    )
+    w := zapcore.AddSync(l)
+    core := zapcore.NewCore(
+        zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+        w,
+        zap.InfoLevel,
+    )
+    logger := zap.New(core)
+    logger.Info("Hello, World!")
 }
 ```
 
@@ -74,7 +72,7 @@ calculations in UTC, you may create a UTC clock:
 type UTCClock struct{}
 
 func (UTCClock) Now() time.Time {
-	return time.Now().UTC()
+    return time.Now().UTC()
 }
 
 logrotate.New(
@@ -120,24 +118,24 @@ In particular, the minimal interval unit is in `time.Second` level.
 Note: Remember to use `time.Duration` values.
 
 ```go
-  // Rotate every hour
-  logrotate.New(
+// Rotate every hour
+logrotate.New(
     "/path/to/log.%Y%m%d",
     logrotate.WithMaxInterval(time.Hour),
-  )
+)
 ```
 
-### MaxSize (default: 100 MB)
+### MaxSize (default: 100 MiB)
 
-MaxSize is the maximum size in MB (megabytes) of the log file before it gets
-rotated. It defaults to 100 MB.
+MaxSize is the maximum size in MiB (megabytes) of the log file before it gets
+rotated. It defaults to 100 MiB.
 
 ```go
-  // Rotate every 10 MB
-  logrotate.New(
+// Rotate every 10 MiB
+logrotate.New(
     "/path/to/log.%Y%m%d",
     logrotate.WithMaxSize(10*1024*1024),
-  )
+)
 ```
 
 ### MaxAge (default: 0)
@@ -148,11 +146,11 @@ If MaxAge <= 0, that means not remove old log files based on age.
 Note: Remember to use `time.Duration` values.
 
 ```go
-  // Remove logs older than 7 days
-  logrotate.New(
+// Remove logs older than 7 days
+logrotate.New(
     "/path/to/log.%Y%m%d",
     logrotate.WithMaxAge(7*24*time.Hour),
-  )
+)
 ```
 
 ### MaxBackups (default: 0)
@@ -161,11 +159,11 @@ The maximum number of old log files to retain. If MaxBackups <= 0, that means
 retain all old log files (though MaxAge may still cause them to be removed.)
 
 ```go
-  // Remove logs except latest 7 files
-  logrotate.New(
+// Remove logs except latest 7 files
+logrotate.New(
     "/path/to/log.%Y%m%d",
     logrotate.WithMaxBackups(7),
-  )
+)
 ```
 
 ### BufferedWrite (default: 0)
@@ -174,9 +172,9 @@ If you want use buffered write, then sets the channel size to be > 0.
 If BufferedWrite <= 0, that means do not use buffered write.
 
 ```go
-  // Use buffered write and set channel size to 100
-  logrotate.New(
+// Use buffered write and set channel size to 100
+logrotate.New(
     "/path/to/log.%Y%m%d",
     logrotate.WithBufferedWrite(100),
-  )
+)
 ```
