@@ -492,11 +492,13 @@ func Test_CreateNewFileWhenRemovedOnWrite(t *testing.T) {
 	time.Sleep(time.Second)
 	os.RemoveAll(dir)
 	l.Write([]byte("after removed"))
+	files, _ := os.ReadDir(dir)
+	require.Equal(t, 1, len(files), "should auto create new log files after removed")
 
 	err = l.Close()
 	require.NoError(t, err, "Close should succeed")
 	time.Sleep(100 * time.Millisecond)
-	files, _ := os.ReadDir(dir)
+	files, _ = os.ReadDir(dir)
 	require.Equal(t, 2, len(files), "should auto create new log files after removed")
 }
 
@@ -515,4 +517,30 @@ func Test_DataRaceOnWrite(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		log.Println(logline)
 	}
+}
+
+func Test_SymlinkTologfileWithSuffix(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Test_SymlinkTologfileWithSuffix")
+	defer os.RemoveAll(dir)
+	symlinkFilePath := filepath.Join(dir, "app")
+	l, err := New(
+		filepath.Join(dir, "app.%Y%m%d%H.log"),
+		WithSymlink(symlinkFilePath),
+		WithMaxSize(8),
+	)
+	require.NoError(t, err, "New should succeed")
+
+	l.Write([]byte("logfile1"))
+	l.Write([]byte("logfile2"))
+	l.Write([]byte("logfile3"))
+
+	time.Sleep(100 * time.Millisecond)
+	files, _ := os.ReadDir(dir)
+	require.Equal(t, 4, len(files), "should create 1 symlink file and 3 log files")
+
+	fileContent, err := os.ReadFile(symlinkFilePath)
+	require.NoError(t, err, "ReadFile should succeed")
+	require.Equal(t, fileContent, []byte("logfile3"), "symlink file should auto link to the 3rd log file")
+	err = l.Close()
+	require.NoError(t, err, "Close should succeed")
 }

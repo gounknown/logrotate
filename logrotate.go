@@ -3,8 +3,10 @@
 package logrotate
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -121,7 +123,7 @@ func (l *Logger) write(b []byte) (n int, err error) {
 
 	// The os.Stat method cost is: 256 B/op, 2 allocs/op
 	_, err = os.Stat(l.currFilename)
-	if l.file == nil || os.IsNotExist(err) {
+	if l.file == nil || errors.Is(err, fs.ErrNotExist) {
 		if err = l.openExistingOrNew(writeLen); err != nil {
 			return 0, err
 		}
@@ -307,11 +309,11 @@ func (l *Logger) openExistingOrNew(writeLen int64) error {
 
 	filename := l.evalCurrentFilename(writeLen, false)
 	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return l.openNew(filename)
 	}
 	if err != nil {
-		return fmt.Errorf("error getting log file info: %s", err)
+		return fmt.Errorf("faild to get logfile info: %s", err)
 	}
 
 	if l.opts.maxSize > 0 && info.Size()+writeLen >= int64(l.opts.maxSize) {
@@ -392,10 +394,10 @@ func (l *Logger) evalCurrentFilename(writeLen int64, forceNewFile bool) string {
 	if forceNewFile {
 		// A new file has been requested. Instead of just using the
 		// regular strftime pattern, we create a new file name with
-		// sequence suffix such as "foo.1", "foo.2", "foo.3", etc
+		// sequence suffix such as "foo.1", "foo.2", "foo.3", etc.
 		for {
 			if _, err := os.Stat(filename); err != nil {
-				// found the first IsNotExist file
+				// found the first not existed file
 				break
 			}
 			l.currSequence++

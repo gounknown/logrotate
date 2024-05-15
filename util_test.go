@@ -199,56 +199,56 @@ func Test_parseGlobPattern(t *testing.T) {
 			args: args{
 				pattern: "test_%Y%m%d%H%M%S",
 			},
-			want: "test_*",
+			want: "test_**",
 		},
 		{
 			name: "format-strftime",
 			args: args{
 				pattern: "test_%Y-%m-%d %H:%M:%S",
 			},
-			want: "test_*-*-* *:*:*",
+			want: "test_*-*-* *:*:**",
 		},
 		{
 			name: "all-strftime",
 			args: args{
 				pattern: "%Y%m%d%H%M%S",
 			},
-			want: "*",
+			want: "**",
 		},
 		{
 			name: "with-one-*",
 			args: args{
 				pattern: "test_*%Y%m%d%H%M%S",
 			},
-			want: "test_*",
+			want: "test_**",
 		},
 		{
 			name: "with-mutiple-*",
 			args: args{
 				pattern: "test_***%Y%m%d%H%M%S**",
 			},
-			want: "test_*",
+			want: "test_**",
 		},
 		{
 			name: "escape-ok-%%",
 			args: args{
 				pattern: "test_%%%Y%m%d%H%M%S",
 			},
-			want: "test_*",
+			want: "test_**",
 		},
 		{
 			name: "escape-miss-%",
 			args: args{
 				pattern: "test_%%Y%m%d%H%M%S",
 			},
-			want: "test_*Y*",
+			want: "test_*Y**",
 		},
 		{
 			name: "with-file-ext",
 			args: args{
 				pattern: "test_%Y%m%d%H%M%S.log",
 			},
-			want: "test_*.log",
+			want: "test_*.log*",
 		},
 	}
 	for _, tt := range tests {

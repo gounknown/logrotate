@@ -71,7 +71,7 @@ func WithMaxInterval(d time.Duration) Option {
 // rotated. If MaxSize <= 0, that means not rotate log file based
 // on size.
 //
-// Default: 100 MB
+// Default: 100 MiB
 func WithMaxSize(s int) Option {
 	return func(opts *Options) {
 		opts.maxSize = s
