@@ -493,7 +493,8 @@ func Test_CreateNewFileWhenRemovedOnWrite(t *testing.T) {
 	os.RemoveAll(dir)
 	l.Write([]byte("after removed"))
 	files, _ := os.ReadDir(dir)
-	require.Equal(t, 1, len(files), "should auto create new log files after removed")
+	// symlink may alse be created
+	require.LessOrEqual(t, 1, len(files), "should auto create new log files after removed")
 
 	err = l.Close()
 	require.NoError(t, err, "Close should succeed")
