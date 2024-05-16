@@ -11,6 +11,7 @@ import (
 func main() {
 	l, err := logrotate.New(
 		"_logs/app.%Y%m%d%H%M.log",
+		logrotate.WithSymlink("_logs/app"),
 		logrotate.WithMaxInterval(time.Minute),
 	)
 	if err != nil {

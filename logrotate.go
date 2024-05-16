@@ -89,6 +89,9 @@ func New(pattern string, options ...Option) (*Logger, error) {
 // In the meantime, the writeLoop goroutine will sink the writeCh to files
 // asynchronously in background.
 //
+// Write writes len(b) bytes from b to the File. It returns the number of bytes
+// written and an error, if any. Write returns a non-nil error when n != len(b).
+//
 // NOTE: It's an undefined behavior if you still call Write after Close called.
 // Maybe it would sink to files, maybe not, but it won't panic.
 func (l *Logger) Write(b []byte) (n int, err error) {
@@ -109,7 +112,9 @@ func (l *Logger) Write(b []byte) (n int, err error) {
 	return len(b), nil
 }
 
-// write writes to the target file handle that is currently being used.
+// write writes len(b) bytes to the target file handle that is currently being
+// used. It returns the number of bytes written and an error, if any. write
+// returns a non-nil error when n != len(b).
 //
 // If a write would cause the log file to be larger than MaxSize, or we have
 // reached a new rotation time (evaluated based on MaxInterval), the target
@@ -127,30 +132,33 @@ func (l *Logger) write(b []byte) (n int, err error) {
 		if err = l.openExistingOrNew(writeLen); err != nil {
 			return 0, err
 		}
+	} else if err != nil {
+		return 0, err
 	}
 	// Factor 1: MaxSize
 	if l.opts.maxSize > 0 && l.size+writeLen > int64(l.opts.maxSize) {
-		if err := l.rotate(); err != nil {
+		if err = l.rotate(); err != nil {
 			return 0, err
 		}
 	} else {
 		// Factor 2: MaxInterval
 		if l.maxIntervalSeconds > 0 &&
 			l.currRotationTime != evalCurrRotationTime(l.opts.clock, l.tzOffsetSeconds, l.maxIntervalSeconds) {
-			if err := l.rotate(); err != nil {
+			if err = l.rotate(); err != nil {
 				return 0, err
 			}
 		}
 	}
 
 	n, err = l.file.Write(b)
+	l.size += int64(n)
+
 	if err != nil {
 		tracef(os.Stderr, "failed to write: %v, so try to open existing or new file", err)
-		if err = l.openExistingOrNew(writeLen); err != nil {
-			return 0, err
+		if err1 := l.openExistingOrNew(writeLen); err1 != nil {
+			return 0, err1
 		}
 	}
-	l.size += int64(n)
 
 	return n, err
 }
