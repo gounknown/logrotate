@@ -154,9 +154,10 @@ func (l *Logger) write(b []byte) (n int, err error) {
 	l.size += int64(n)
 
 	if err != nil {
-		tracef(os.Stderr, "failed to write: %v, so try to open existing or new file", err)
+		tracef(os.Stderr, "failed to write: %v, try to open existing or new file", err)
 		if err1 := l.openExistingOrNew(writeLen); err1 != nil {
-			return 0, err1
+			err = errors.Join(err, err1)
+			return n, err
 		}
 	}
 
@@ -315,12 +316,16 @@ func (l *Logger) getLogFiles() ([]*logfile, error) {
 func (l *Logger) openExistingOrNew(writeLen int64) error {
 	defer l.mill()
 
+	// close ahead
+	if err := l.close(); err != nil {
+		return err
+	}
+
 	filename := l.evalCurrentFilename(writeLen, false)
 	info, err := os.Stat(filename)
 	if errors.Is(err, fs.ErrNotExist) {
 		return l.openNew(filename)
-	}
-	if err != nil {
+	} else if err != nil {
 		return fmt.Errorf("faild to get logfile info: %s", err)
 	}
 
@@ -442,6 +447,7 @@ func (l *Logger) close() error {
 	}
 	err := l.file.Close()
 	l.file = nil
+	l.size = 0
 	return err
 }
 
