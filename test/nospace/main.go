@@ -10,9 +10,9 @@ import (
 // test "write: No space left on device"
 func main() {
 	l, err := logrotate.New(
-		"_logs/app.%Y%m%d%H%M.log",
+		"_logs/app.%Y%m%d%H.log",
 		logrotate.WithSymlink("_logs/app"),
-		logrotate.WithMaxInterval(time.Minute),
+		logrotate.WithMaxInterval(time.Hour),
 	)
 	if err != nil {
 		panic(err)

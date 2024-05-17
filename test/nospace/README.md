@@ -20,3 +20,8 @@ sudo docker exec -it <container-id> /bin/sh
 cd /ramdisk
 ./main
 ```
+
+list deleted files but still held by processes:
+```
+lsof -n <DIR> | grep delete
+```
