@@ -29,18 +29,21 @@ type Logger struct {
 	maxIntervalSeconds int64 // max interval in seconds
 	tzOffsetSeconds    int64 // time zone offset in seconds
 
-	mu               sync.RWMutex // guards following
-	file             *os.File     // current file handle being written to
-	size             int64        // write size of current file
-	currRotationTime int64        // Unix timestamp with location
-	currFilename     string       // current filename being written to
-	currBaseFilename string       // base filename without suffix sequence
-	currSequence     uint         // filename suffix sequence
+	mu               sync.RWMutex   // guards following
+	file             io.WriteCloser // current file handle being written to
+	size             int64          // write size of current file
+	currRotationTime int64          // Unix timestamp with location
+	currFilename     string         // current filename being written to
+	currBaseFilename string         // base filename without suffix sequence
+	currSequence     uint           // filename suffix sequence
 
 	wg      sync.WaitGroup // counts active background goroutines
 	writeCh chan []byte    // buffered chan for write goroutine
 	millCh  chan struct{}  // 1-size notification chan for mill goroutine
 	quit    chan struct{}  // closed when writeLoop and millLoop should quit
+
+	// mocked out for testing.
+	osStat func(name string) (fs.FileInfo, error) // os.Stat
 }
 
 // New creates a new concurrent safe Logger object with the provided
@@ -61,6 +64,8 @@ func New(pattern string, options ...Option) (*Logger, error) {
 		tzOffsetSeconds:    int64(offset),
 		millCh:             make(chan struct{}, 1),
 		quit:               make(chan struct{}),
+
+		osStat: os.Stat,
 	}
 
 	if opts.writeChSize > 0 {
@@ -127,7 +132,7 @@ func (l *Logger) write(b []byte) (n int, err error) {
 	writeLen := int64(len(b))
 
 	// The os.Stat method cost is: 256 B/op, 2 allocs/op
-	_, err = os.Stat(l.currFilename)
+	_, err = l.osStat(l.currFilename)
 	if l.file == nil || errors.Is(err, fs.ErrNotExist) {
 		if err = l.openExistingOrNew(writeLen); err != nil {
 			return 0, err
@@ -316,17 +321,17 @@ func (l *Logger) getLogFiles() ([]*logfile, error) {
 func (l *Logger) openExistingOrNew(writeLen int64) error {
 	defer l.mill()
 
-	// close ahead
+	// try close ahead, since l.file maybe not nil.
 	if err := l.close(); err != nil {
 		return err
 	}
 
 	filename := l.evalCurrentFilename(writeLen, false)
-	info, err := os.Stat(filename)
+	info, err := l.osStat(filename)
 	if errors.Is(err, fs.ErrNotExist) {
 		return l.openNew(filename)
 	} else if err != nil {
-		return fmt.Errorf("faild to get logfile info: %s", err)
+		return fmt.Errorf("get logfile info: %w", err)
 	}
 
 	if l.opts.maxSize > 0 && info.Size()+writeLen >= int64(l.opts.maxSize) {
@@ -409,7 +414,7 @@ func (l *Logger) evalCurrentFilename(writeLen int64, forceNewFile bool) string {
 		// regular strftime pattern, we create a new file name with
 		// sequence suffix such as "foo.1", "foo.2", "foo.3", etc.
 		for {
-			if _, err := os.Stat(filename); err != nil {
+			if _, err := l.osStat(filename); err != nil {
 				// found the first not existed file
 				break
 			}

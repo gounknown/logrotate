@@ -1,11 +1,15 @@
 package logrotate
 
 import (
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -544,4 +548,68 @@ func Test_SymlinkTologfileWithSuffix(t *testing.T) {
 	require.Equal(t, fileContent, []byte("logfile3"), "symlink file should auto link to the 3rd log file")
 	err = l.Close()
 	require.NoError(t, err, "Close should succeed")
+}
+
+func Test_Stat_ErrPermission(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Test_Stat_ErrPermission")
+	defer os.RemoveAll(dir)
+
+	l, err := New(
+		filepath.Join(dir, "app.log"),
+	)
+	require.NoError(t, err, "New should succeed")
+	l.Write([]byte("1"))
+	// hook l.osStat
+	l.osStat = func(string) (os.FileInfo, error) {
+		return nil, fs.ErrPermission
+	}
+	_, err = l.Write([]byte("2"))
+	require.Equal(t, true, errors.Is(err, fs.ErrPermission), "Should return fs.ErrPermission error")
+	// restored
+	l.osStat = os.Stat
+}
+
+type testFile struct {
+	werr error // write error
+	cerr error // close error
+}
+
+func (f testFile) Write(b []byte) (n int, err error) {
+	return 0, f.werr
+}
+
+func (f testFile) Close() error {
+	return f.cerr
+}
+
+func Test_Write_Error(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Test_Write_Error")
+	defer os.RemoveAll(dir)
+
+	l, err := New(
+		filepath.Join(dir, "app.log"),
+	)
+	require.NoError(t, err, "New should succeed")
+
+	_, err = l.Write([]byte("1"))
+	require.NoError(t, err, "Write should succeed")
+
+	// hook l.file
+	oldFile := l.file
+	l.file = testFile{werr: io.ErrShortWrite}
+	_, err = l.Write([]byte("1"))
+	require.Equal(t, true, errors.Is(err, io.ErrShortWrite), "Should return error: io.ErrShortWrite")
+
+	// hook l.file
+	l.file = testFile{werr: syscall.ENOSPC} // No space left on device
+	_, err = l.Write([]byte("1"))
+	require.Equal(t, true, errors.Is(err, syscall.ENOSPC), "Should return error: syscall.ENOSPC")
+
+	// hook l.file
+	l.file = testFile{werr: io.ErrShortWrite, cerr: fs.ErrClosed}
+	_, err = l.Write([]byte("1"))
+	require.Equal(t, true, errors.Is(err, fs.ErrClosed), "Should return error: fs.ErrClosed")
+
+	// restored
+	l.file = oldFile
 }
