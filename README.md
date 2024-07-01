@@ -166,15 +166,22 @@ logrotate.New(
 )
 ```
 
-### BufferedWrite (default: 0)
+### WithWriteChan (default: 0)
 
-If you want use buffered write, then sets the channel size to be > 0.
-If BufferedWrite <= 0, that means do not use buffered write.
+WithWriteChan sets the buffered write channel size.
+
+If write chan size <= 0, it will write to the current file directly.
+
+If write chan size > 0, the logger just writes to writeCh and return, and it's
+the write loop goroutine's responsibility to sink the write channel
+to files asynchronously in background. So there is no blocking disk
+I/O operations, and write would not block even if write channel is
+full as it will auto discard log lines.
 
 ```go
 // Use buffered write and set channel size to 100
 logrotate.New(
     "/path/to/log.%Y%m%d",
-    logrotate.WithBufferedWrite(100),
+    logrotate.WithWriteChan(100),
 )
 ```

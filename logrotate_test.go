@@ -52,7 +52,7 @@ func Benchmark_MaxInterval(b *testing.B) {
 		WithMaxInterval(time.Second),
 		// WithMaxAge(3*time.Second),
 		WithMaxBackups(10),
-		WithBufferedWrite(100),
+		WithWriteChan(100),
 	)
 	require.NoError(b, err, "New should succeed")
 	defer l.Close()
@@ -88,7 +88,7 @@ func Benchmark_BufferedWriteWithoutRotate(b *testing.B) {
 	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log"),
 		WithMaxSize(0),
-		WithBufferedWrite(100),
+		WithWriteChan(100),
 	)
 	require.NoError(b, err, "New should succeed")
 	defer l.Close()
@@ -262,7 +262,7 @@ func Test_BufferedWrite(t *testing.T) {
 	l, err := New(
 		filepath.Join(dir, "log"),
 		WithMaxSize(10),
-		WithBufferedWrite(100),
+		WithWriteChan(100),
 	)
 	require.NoError(t, err, `New should succeed`)
 	for i := 0; i < 10; i++ {
@@ -507,21 +507,25 @@ func Test_CreateNewFileWhenRemovedOnWrite(t *testing.T) {
 	require.Equal(t, 2, len(files), "should auto create new log files after removed")
 }
 
-func Test_DataRaceOnWrite(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Test_DataRaceOnWrite")
+func Test_DiscardsWithWriteChan(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Test_DiscardsWithWriteChan")
 	defer os.RemoveAll(dir)
 	l, err := New(
 		filepath.Join(dir, "app.%Y%m%d%H.log"),
 		WithSymlink(filepath.Join(dir, "app")),
+		WithWriteChan(1),
 	)
 	require.NoError(t, err, "New should succeed")
 
 	log.SetOutput(l)
 
-	logline := "Hello, World"
 	for i := 0; i < 1000; i++ {
-		log.Println(logline)
+		go func() {
+			log.Println(logline50)
+		}()
 	}
+	metrics := l.Metrics()
+	require.Greaterf(t, metrics.Discards, uint64(0), "should discarded log lines (%d) should be >= 1", metrics.Discards)
 }
 
 func Test_SymlinkTologfileWithSuffix(t *testing.T) {
