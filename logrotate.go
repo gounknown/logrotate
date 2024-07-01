@@ -142,14 +142,17 @@ func (l *Logger) write(b []byte) (n int, err error) {
 
 	writeLen := int64(len(b))
 
-	// The os.Stat method cost is: 256 B/op, 2 allocs/op
-	_, err = l.osStat(l.currFilename)
-	if l.file == nil || errors.Is(err, fs.ErrNotExist) {
-		if err = l.openExistingOrNew(writeLen); err != nil {
+	// try to resume current log file even if removed by other processes
+	if l.currFilename != "" {
+		// The os.Stat method cost is: 256 B/op, 2 allocs/op
+		_, err = l.osStat(l.currFilename)
+		if l.file == nil || errors.Is(err, fs.ErrNotExist) {
+			if err = l.openExistingOrNew(writeLen); err != nil {
+				return 0, err
+			}
+		} else if err != nil {
 			return 0, err
 		}
-	} else if err != nil {
-		return 0, err
 	}
 	// Factor 1: MaxSize
 	if l.opts.maxSize > 0 && l.size+writeLen > int64(l.opts.maxSize) {
@@ -337,7 +340,11 @@ func (l *Logger) openExistingOrNew(writeLen int64) error {
 		return err
 	}
 
-	filename := l.evalCurrentFilename(writeLen, false)
+	filename, overMaxSequence := l.evalCurrentFilename(writeLen, false)
+	if overMaxSequence {
+		return l.openNew(filename)
+	}
+
 	info, err := l.osStat(filename)
 	if errors.Is(err, fs.ErrNotExist) {
 		return l.openNew(filename)
@@ -381,8 +388,8 @@ func (l *Logger) openNew(filename string) error {
 }
 
 // l.mu must be held by the caller.
-// take MaxSize and MaxInterval into consideration.
-func (l *Logger) evalCurrentFilename(writeLen int64, forceNewFile bool) string {
+// take MaxInterval, MaxSequence, and MaxSize into consideration.
+func (l *Logger) evalCurrentFilename(writeLen int64, forceNewFile bool) (string, bool) {
 	baseFilename := l.currBaseFilename
 	if l.currBaseFilename == "" {
 		// init base filename if l.currBaseFilename not set
@@ -401,13 +408,13 @@ func (l *Logger) evalCurrentFilename(writeLen int64, forceNewFile bool) string {
 			baseFilename = genBaseFilename(l.pattern, l.opts.clock, l.currRotationTime)
 		}
 	}
-
+	overMaxSequence := false
 	if baseFilename != l.currBaseFilename {
 		l.currBaseFilename = baseFilename
 		l.currSequence = 0
 	} else {
 		if forceNewFile || (l.opts.maxSize > 0 && l.size+writeLen > int64(l.opts.maxSize)) {
-			l.currSequence++
+			overMaxSequence = l.incrCurrSequence()
 		}
 	}
 
@@ -425,17 +432,30 @@ func (l *Logger) evalCurrentFilename(writeLen int64, forceNewFile bool) string {
 		// regular strftime pattern, we create a new file name with
 		// sequence suffix such as "foo.1", "foo.2", "foo.3", etc.
 		for {
+			if overMaxSequence {
+				break
+			}
 			if _, err := l.osStat(filename); err != nil {
 				// found the first not existed file
 				break
 			}
-			l.currSequence++
+			overMaxSequence = l.incrCurrSequence()
 			filename = genFilename(l.currBaseFilename, l.currSequence)
 		}
 	}
 
 	l.currFilename = filename
-	return filename
+	return filename, overMaxSequence
+}
+
+func (l *Logger) incrCurrSequence() bool {
+	l.currSequence++
+
+	if l.opts.maxSequence > 0 && l.currSequence > uint(l.opts.maxSequence) {
+		l.currSequence = uint(l.opts.maxSequence)
+		return true
+	}
+	return false
 }
 
 // Close implements io.Closer. It closes the writeLoop and millLoop
@@ -488,7 +508,7 @@ func (l *Logger) rotate() error {
 	if err := l.close(); err != nil {
 		return err
 	}
-	filename := l.evalCurrentFilename(0, true)
+	filename, _ := l.evalCurrentFilename(0, true)
 	if err := l.openNew(filename); err != nil {
 		return err
 	}

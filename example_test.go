@@ -30,5 +30,4 @@ func ExampleNew() {
 	// OUTPUT:
 	// test.log
 	// test.log.1
-	// test.log.2
 }
