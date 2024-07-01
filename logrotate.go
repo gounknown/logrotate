@@ -142,14 +142,17 @@ func (l *Logger) write(b []byte) (n int, err error) {
 
 	writeLen := int64(len(b))
 
-	// The os.Stat method cost is: 256 B/op, 2 allocs/op
-	_, err = l.osStat(l.currFilename)
-	if l.file == nil || errors.Is(err, fs.ErrNotExist) {
-		if err = l.openExistingOrNew(writeLen); err != nil {
+	// try to resume current log file even if removed by other processes
+	if l.currFilename != "" {
+		// The os.Stat method cost is: 256 B/op, 2 allocs/op
+		_, err = l.osStat(l.currFilename)
+		if l.file == nil || errors.Is(err, fs.ErrNotExist) {
+			if err = l.openExistingOrNew(writeLen); err != nil {
+				return 0, err
+			}
+		} else if err != nil {
 			return 0, err
 		}
-	} else if err != nil {
-		return 0, err
 	}
 	// Factor 1: MaxSize
 	if l.opts.maxSize > 0 && l.size+writeLen > int64(l.opts.maxSize) {
