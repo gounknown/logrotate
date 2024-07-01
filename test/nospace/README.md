@@ -23,5 +23,5 @@ cd /ramdisk
 
 list deleted files but still held by processes:
 ```
-lsof -n <DIR> | grep delete
+lsof -n <DIR> | grep deleted
 ```

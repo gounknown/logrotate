@@ -42,6 +42,8 @@ type Logger struct {
 	millCh  chan struct{}  // 1-size notification chan for mill goroutine
 	quit    chan struct{}  // closed when writeLoop and millLoop should quit
 
+	metrics atomicMetrics
+
 	// mocked out for testing.
 	osStat func(name string) (fs.FileInfo, error) // os.Stat
 }
@@ -111,9 +113,18 @@ func (l *Logger) Write(b []byte) (n int, err error) {
 	// the caller.
 	//
 	// TODO: slice value-copy and GC cost is high, how to optimize? bufio?
-	copied := make([]byte, len(b))
-	copy(copied, b)
-	l.writeCh <- copied
+	if len(l.writeCh) < l.opts.writeChSize {
+		copied := make([]byte, len(b))
+		copy(copied, b)
+		select {
+		case l.writeCh <- copied:
+		default:
+			l.metrics.Discards.Add(1)
+		}
+	} else {
+		l.metrics.Discards.Add(1)
+	}
+
 	return len(b), nil
 }
 
@@ -491,4 +502,9 @@ func (l *Logger) currentFilename() string {
 	defer l.mu.RUnlock()
 
 	return l.currFilename
+}
+
+// Metrics returns metrics of this Logger.
+func (l *Logger) Metrics() Metrics {
+	return l.metrics.toMetrics()
 }

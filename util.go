@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/lestrrat-go/strftime"
@@ -172,4 +173,18 @@ func link(filename string, symlink string) error {
 		return fmt.Errorf("failed to rename new symlink %s -> %s: %v", tmpLinkName, symlink, err)
 	}
 	return nil
+}
+
+type atomicMetrics struct {
+	Discards atomic.Uint64
+}
+
+func (a *atomicMetrics) toMetrics() Metrics {
+	return Metrics{
+		Discards: a.Discards.Load(),
+	}
+}
+
+type Metrics struct {
+	Discards uint64 // discarded log lines
 }
