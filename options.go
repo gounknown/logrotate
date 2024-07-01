@@ -9,6 +9,7 @@ type Options struct {
 	clock       Clock         // used to determine the current time
 	symlink     string        // linked to the current file
 	maxInterval time.Duration // max interval between file rotation
+	maxSequence int           // max count of log files in the same interval
 	maxSize     int           // max size of log file before rotation
 	maxAge      time.Duration // max age to retain old log files
 	maxBackups  int           // max number of old log files to retain
@@ -67,6 +68,20 @@ func WithMaxInterval(d time.Duration) Option {
 	}
 }
 
+// WithMaxSequence controls the max count of rotated log files in the same
+// interval. If over max sequence limit, the logger will clear content of
+// the log file with max sequence suffix, and then write to it.
+//
+// If MaxSequence <= 0, that means no limit of rotated log files in the
+// same interval.
+//
+// Default: 0
+func WithMaxSequence(n int) Option {
+	return func(opts *Options) {
+		opts.maxSequence = n
+	}
+}
+
 // WithMaxSize sets the maximum size of log file before it gets
 // rotated. If MaxSize <= 0, that means not rotate log file based
 // on size.
@@ -104,11 +119,11 @@ func WithMaxBackups(n int) Option {
 //
 // If write chan size <= 0, it will write to the current file directly.
 //
-// If write chan size > 0, the logger just writes to writeCh and return, and it's
-// the write loop goroutine's responsibility to sink the write channel
-// to files asynchronously in background. So there is no blocking disk
-// I/O operations, and write would not block even if write channel is
-// full as it will auto discard log lines.
+// If write chan size > 0, the logger just writes to write chan and return,
+// and it's the write loop goroutine's responsibility to sink the write channel
+// to files asynchronously in background. So there is no blocking disk I/O
+// operations, and write would not block even if write channel is full as it will
+// auto discard log lines.
 //
 // Default: 0
 func WithWriteChan(size int) Option {

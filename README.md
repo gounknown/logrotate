@@ -125,6 +125,24 @@ logrotate.New(
 )
 ```
 
+
+### MaxSequence (default: 0)
+
+MaxSequence controls the max count of rotated log files in the same
+interval. If over max sequence limit, the logger will clear content of
+the log file with max sequence suffix, and then write to it.
+
+If MaxSequence <= 0, that means no  limit of rotated log files in the
+same interval.
+
+```go
+// limit max 100 rotated files in the same interval
+logrotate.New(
+    "/path/to/log.%Y%m%d",
+    logrotate.MaxSequence(100),
+)
+```
+
 ### MaxSize (default: 100 MiB)
 
 MaxSize is the maximum size in MiB (megabytes) of the log file before it gets
@@ -166,17 +184,17 @@ logrotate.New(
 )
 ```
 
-### WithWriteChan (default: 0)
+### WriteChan (default: 0)
 
 WithWriteChan sets the buffered write channel size.
 
 If write chan size <= 0, it will write to the current file directly.
 
-If write chan size > 0, the logger just writes to writeCh and return, and it's
-the write loop goroutine's responsibility to sink the write channel
-to files asynchronously in background. So there is no blocking disk
-I/O operations, and write would not block even if write channel is
-full as it will auto discard log lines.
+If write chan size > 0, the logger just writes to write chan and return,
+and it's the write loop goroutine's responsibility to sink the write channel
+to files asynchronously in background. So there is no blocking disk I/O
+operations, and write would not block even if write channel is full as it will
+auto discard log lines.
 
 ```go
 // Use buffered write and set channel size to 100

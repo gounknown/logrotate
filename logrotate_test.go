@@ -528,6 +528,27 @@ func Test_DiscardsWithWriteChan(t *testing.T) {
 	require.Greaterf(t, metrics.Discards, uint64(0), "should discarded log lines (%d) should be >= 1", metrics.Discards)
 }
 
+func Test_MaxSequence(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Test_MaxSequence")
+	// defer os.RemoveAll(dir)
+	l, err := New(
+		filepath.Join(dir, "app.%Y%m%d%H.log"),
+		WithMaxSize(1),
+		WithMaxSequence(10),
+	)
+	require.NoError(t, err, "New should succeed")
+
+	for i := 0; i < 1000; i++ {
+		line := fmt.Sprintf("%d: %v", i, time.Now())
+		l.Write([]byte(line))
+	}
+	err = l.Close()
+	require.NoError(t, err, "Close should succeed")
+	time.Sleep(100 * time.Millisecond)
+	files, _ := os.ReadDir(dir)
+	require.Equal(t, 11, len(files), "should auto create new log files after removed")
+}
+
 func Test_SymlinkTologfileWithSuffix(t *testing.T) {
 	dir := filepath.Join(baseTestDir, "Test_SymlinkTologfileWithSuffix")
 	defer os.RemoveAll(dir)
