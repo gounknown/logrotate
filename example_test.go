@@ -8,8 +8,8 @@ import (
 )
 
 func ExampleNew() {
-	dir := "_logs/example/"
-	// defer os.RemoveAll(dir)
+	dir := "_examplelogs/"
+	defer os.RemoveAll(dir)
 
 	l, _ := New(
 		dir+"test.log",
