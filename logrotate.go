@@ -142,7 +142,14 @@ func (l *Logger) write(b []byte) (n int, err error) {
 
 	writeLen := int64(len(b))
 
-	// try to resume current log file even if removed by other processes
+	// Try to resume current log file on New
+	if l.file == nil {
+		if err = l.openExistingOrNew(writeLen); err != nil {
+			return 0, err
+		}
+	}
+	// Try to resume current log file even if removed by other processes
+	// TODO: to avoid stat cost on per write, we can stat periodically (e.g.: 1 times per second).
 	if l.currFilename != "" {
 		// The os.Stat method cost is: 256 B/op, 2 allocs/op
 		_, err = l.osStat(l.currFilename)

@@ -611,6 +611,54 @@ func Test_Stat_ErrPermission(t *testing.T) {
 	l.osStat = os.Stat
 }
 
+func Test_New_OpenExistingOrNew(t *testing.T) {
+	dir := filepath.Join(baseTestDir, "Test_New_OpenExistingOrNew")
+	defer os.RemoveAll(dir)
+
+	// New 1
+	l, err := New(
+		filepath.Join(dir, "app.log"),
+		WithMaxSize(10),
+	)
+	require.NoError(t, err, "New should succeed")
+	l.Write([]byte("A"))
+	time.Sleep(time.Second)
+	err = l.Close()
+	require.NoError(t, err, "Close should succeed")
+
+	// New 2
+	l, err = New(
+		filepath.Join(dir, "app.log"),
+		WithMaxSize(10),
+	)
+	require.NoError(t, err, "New should succeed")
+	l.Write([]byte("B"))
+	time.Sleep(time.Second)
+	err = l.Close()
+	require.NoError(t, err, "Close should succeed")
+
+	time.Sleep(100 * time.Millisecond)
+	files, _ := os.ReadDir(dir)
+	// symlink may alse be created
+	require.LessOrEqual(t, 1, len(files), "should auto resume existing log file on New")
+
+	// New 3
+	l, err = New(
+		filepath.Join(dir, "app.log"),
+		WithMaxSize(10),
+	)
+	require.NoError(t, err, "New should succeed")
+	l.Write([]byte("0123456789"))
+	time.Sleep(time.Second)
+	err = l.Close()
+	require.NoError(t, err, "Close should succeed")
+
+	time.Sleep(100 * time.Millisecond)
+	files, _ = os.ReadDir(dir)
+	// symlink may alse be created
+	require.LessOrEqual(t, 2, len(files), "should rotate a new log file on New")
+}
+
 type testFile struct {
 	werr error // write error
 	cerr error // close error
