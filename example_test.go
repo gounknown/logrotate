@@ -8,16 +8,16 @@ import (
 )
 
 func ExampleNew() {
-	dir := "_logs/example/"
+	dir := "_examplelogs/"
 	defer os.RemoveAll(dir)
 
 	l, _ := New(
 		dir+"test.log",
-		WithMaxSize(10), // 10 bytes
+		WithMaxSize(30), // 30 bytes (with 20 bytes timestamp ahea)
 	)
 	log.SetOutput(l)
 
-	log.Printf("Hello, World!") // 13 bytes
+	log.Printf("logrotate")     // 9 bytes
 	log.Printf("Hello, World!") // 13 bytes
 	time.Sleep(time.Second)     // ensure already sink to files
 	l.Close()

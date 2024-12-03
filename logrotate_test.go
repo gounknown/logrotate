@@ -18,12 +18,40 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const baseTestDir = "_logs"
+const baseLogDir = "_testlogs"
+
+// Common initialization function
+func setup() {
+	// Perform common setup tasks here
+	fmt.Println("Common setup tasks")
+	os.RemoveAll(baseLogDir)
+}
+
+// Common cleanup function
+func teardown() {
+	// Perform common cleanup tasks here
+	fmt.Println("Common cleanup tasks")
+}
+
+// TestMain is the entry point for the tests
+func TestMain(m *testing.M) {
+	// Call the setup function
+	setup()
+
+	// Run the tests
+	exitCode := m.Run()
+
+	// Call the teardown function
+	teardown()
+
+	// Exit with the appropriate code
+	os.Exit(exitCode)
+}
 
 // go test -bench ^Benchmark_MaxBackups1000$ -benchmem -benchtime=10s -cpuprofile=profile.out
 // go tool pprof -http=:8080 profile.out
 func Benchmark_MaxBackups1000(b *testing.B) {
-	dir := filepath.Join(baseTestDir, "Benchmark_MaxBackups1000")
+	dir := filepath.Join(baseLogDir, "Benchmark_MaxBackups1000")
 	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
 		WithSymlink(filepath.Join(dir, "log")),
@@ -44,7 +72,7 @@ func Benchmark_MaxBackups1000(b *testing.B) {
 }
 
 func Benchmark_MaxInterval(b *testing.B) {
-	dir := filepath.Join(baseTestDir, "Benchmark_MaxInterval")
+	dir := filepath.Join(baseLogDir, "Benchmark_MaxInterval")
 	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
 		WithSymlink(filepath.Join(dir, "log")),
@@ -68,7 +96,7 @@ func Benchmark_MaxInterval(b *testing.B) {
 var logline50 = []byte("01234567890123456789012345678901234567890123456789")
 
 func Benchmark_WriteWithoutRotate(b *testing.B) {
-	dir := filepath.Join(baseTestDir, "BenchmarkNoRotate")
+	dir := filepath.Join(baseLogDir, "BenchmarkNoRotate")
 	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log"),
 		WithMaxSize(0),
@@ -84,7 +112,7 @@ func Benchmark_WriteWithoutRotate(b *testing.B) {
 }
 
 func Benchmark_BufferedWriteWithoutRotate(b *testing.B) {
-	dir := filepath.Join(baseTestDir, "BenchmarkNoRotate")
+	dir := filepath.Join(baseLogDir, "BenchmarkNoRotate")
 	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log"),
 		WithMaxSize(0),
@@ -155,7 +183,7 @@ func Test_Rotate(t *testing.T) {
 		i := i   // avoid lint errors
 		tc := tc // avoid lint errors
 		t.Run(tc.Name, func(t *testing.T) {
-			dir := filepath.Join(baseTestDir, fmt.Sprintf("Test_Rotate-%d", i))
+			dir := filepath.Join(baseLogDir, fmt.Sprintf("Test_Rotate-%d", i))
 			defer os.RemoveAll(dir)
 
 			// Change current time, so we can safely purge old logs
@@ -242,7 +270,7 @@ func Test_Rotate(t *testing.T) {
 }
 
 func Test_MaxInterval0(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Benchmark_MaxInterval0")
+	dir := filepath.Join(baseLogDir, "Benchmark_MaxInterval0")
 	defer os.RemoveAll(dir)
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"),
 		WithSymlink(filepath.Join(dir, "log")),
@@ -256,7 +284,7 @@ func Test_MaxInterval0(t *testing.T) {
 }
 
 func Test_BufferedWrite(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Test_BufferedWrite")
+	dir := filepath.Join(baseLogDir, "Test_BufferedWrite")
 	defer os.RemoveAll(dir)
 
 	l, err := New(
@@ -279,7 +307,7 @@ func Test_BufferedWrite(t *testing.T) {
 }
 
 func Test_MaxBackups(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Test_MaxBackups")
+	dir := filepath.Join(baseLogDir, "Test_MaxBackups")
 	defer os.RemoveAll(dir)
 
 	dummyTime := time.Now().Add(-7 * 24 * time.Hour)
@@ -348,7 +376,7 @@ func Test_MaxBackups(t *testing.T) {
 }
 
 func Test_SetOutput(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Test_SetOutput")
+	dir := filepath.Join(baseLogDir, "Test_SetOutput")
 	defer os.RemoveAll(dir)
 
 	l, err := New(filepath.Join(dir, "log%Y%m%d%H%M%S"))
@@ -377,7 +405,7 @@ func Test_SetOutput(t *testing.T) {
 }
 
 func Test_RotationSuffixSeq(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Test_RotationSuffixSeq")
+	dir := filepath.Join(baseLogDir, "Test_RotationSuffixSeq")
 	defer os.RemoveAll(dir)
 
 	t.Run("Rotate over unchanged pattern", func(t *testing.T) {
@@ -442,7 +470,7 @@ func (f ClockFunc) Now() time.Time {
 }
 
 func Test_TimeZone(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Test_TimeZone")
+	dir := filepath.Join(baseLogDir, "Test_TimeZone")
 	defer os.RemoveAll(dir)
 
 	for _, locName := range []string{"Asia/Tokyo", "Pacific/Honolulu"} {
@@ -484,7 +512,7 @@ func Test_TimeZone(t *testing.T) {
 }
 
 func Test_CreateNewFileWhenRemovedOnWrite(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Test_CreateNewFileWhenRemovedOnWrite")
+	dir := filepath.Join(baseLogDir, "Test_CreateNewFileWhenRemovedOnWrite")
 	defer os.RemoveAll(dir)
 	l, err := New(
 		filepath.Join(dir, "app.%Y%m%d%H.log"),
@@ -508,7 +536,7 @@ func Test_CreateNewFileWhenRemovedOnWrite(t *testing.T) {
 }
 
 func Test_DiscardsWithWriteChan(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Test_DiscardsWithWriteChan")
+	dir := filepath.Join(baseLogDir, "Test_DiscardsWithWriteChan")
 	defer os.RemoveAll(dir)
 	l, err := New(
 		filepath.Join(dir, "app.%Y%m%d%H.log"),
@@ -525,11 +553,11 @@ func Test_DiscardsWithWriteChan(t *testing.T) {
 		}()
 	}
 	metrics := l.Metrics()
-	require.Greaterf(t, metrics.Discards, uint64(0), "should discarded log lines (%d) should be >= 1", metrics.Discards)
+	require.Greaterf(t, metrics.Discards, uint64(0), "Discarded log lines (%d) should be >= 1", metrics.Discards)
 }
 
 func Test_MaxSequence(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Test_MaxSequence")
+	dir := filepath.Join(baseLogDir, "Test_MaxSequence")
 	// defer os.RemoveAll(dir)
 	l, err := New(
 		filepath.Join(dir, "app.%Y%m%d%H.log"),
@@ -567,7 +595,7 @@ func Test_MaxSequence(t *testing.T) {
 }
 
 func Test_SymlinkTologfileWithSuffix(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Test_SymlinkTologfileWithSuffix")
+	dir := filepath.Join(baseLogDir, "Test_SymlinkTologfileWithSuffix")
 	defer os.RemoveAll(dir)
 	symlinkFilePath := filepath.Join(dir, "app")
 	l, err := New(
@@ -593,7 +621,7 @@ func Test_SymlinkTologfileWithSuffix(t *testing.T) {
 }
 
 func Test_Stat_ErrPermission(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Test_Stat_ErrPermission")
+	dir := filepath.Join(baseLogDir, "Test_Stat_ErrPermission")
 	defer os.RemoveAll(dir)
 
 	l, err := New(
@@ -612,7 +640,7 @@ func Test_Stat_ErrPermission(t *testing.T) {
 }
 
 func Test_New_OpenExistingOrNew(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Test_New_OpenExistingOrNew")
+	dir := filepath.Join(baseLogDir, "Test_New_OpenExistingOrNew")
 	defer os.RemoveAll(dir)
 
 	// New 1
@@ -673,7 +701,7 @@ func (f testFile) Close() error {
 }
 
 func Test_Write_Error(t *testing.T) {
-	dir := filepath.Join(baseTestDir, "Test_Write_Error")
+	dir := filepath.Join(baseLogDir, "Test_Write_Error")
 	defer os.RemoveAll(dir)
 
 	l, err := New(
